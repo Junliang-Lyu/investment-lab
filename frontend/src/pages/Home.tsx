@@ -1,28 +1,53 @@
+import { useState } from "react";
 import { navigate } from "../App";
+import { useLang } from "../i18n";
+import { savedMemos } from "../memos";
+
+// Where each workflow step starts. Steps 3-5 happen inside a memo, so they point to the skeptic (step 2) that creates one.
+const STEP_ROUTE = ["/lab/company", "/lab/skeptic", "/lab/skeptic", "/lab/skeptic", "/lab/skeptic", "/lab/gate"];
 
 export default function Home() {
+  const { t } = useLang();
+  const [memos] = useState(savedMemos);
   return (
     <section>
-      <h1>An investment system that argues back</h1>
-      <p className="lede">
-        Most tools tell you what to buy. This one does the opposite: it checks a decision against written rules,
-        pulls the numbers straight from SEC filings, and makes the case against your idea before you act on it.
-      </p>
-      <div className="cards">
-        <button className="card" onClick={() => navigate("/lab/company")}>
-          <h2>Financial snapshot</h2>
-          <p>Eight quarters of revenue, margins, cash flow, capex and segment results. Every number links to the filing it came from.</p>
-        </button>
-        <button className="card" onClick={() => navigate("/lab/gate")}>
-          <h2>Pre-trade gate</h2>
-          <p>Pick a fictional portfolio, propose a trade, and see every rule and checklist item it passes or fails.</p>
-        </button>
-      </div>
-      <h3>How it works</h3>
+      <h1>{t.homeTitle}</h1>
+      <p className="lede">{t.homeLede}</p>
+
+      <h2 className="h2">{t.wfTitle}</h2>
+      <p className="muted">{t.wfLede}</p>
+      <ol className="workflow">
+        {t.wfSteps.map(([head, body], i) => (
+          <li key={head}>
+            <button className="step" onClick={() => navigate(STEP_ROUTE[i])}>
+              <span className="num">{i + 1}</span>
+              <span><b>{head}</b><br /><span className="muted small">{body}</span></span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      <p><button type="button" className="primary" onClick={() => navigate("/lab/skeptic")}>{t.wfStart} →</button></p>
+
+      {memos.length > 0 && (
+        <>
+          <h3>{t.myMemos}</h3>
+          <ul className="memolist">
+            {memos.map((m) => (
+              <li key={m.id}>
+                <a href={`/lab/memo/${m.id}`} onClick={(e) => { e.preventDefault(); navigate(`/lab/memo/${m.id}`); }}>
+                  <b>{m.ticker}</b> {m.thesis}
+                </a>
+                <span className="muted small"> · {m.at.slice(0, 10)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">{t.myMemosNote}</p>
+        </>
+      )}
+
+      <h3>{t.howTitle}</h3>
       <ul className="how">
-        <li><b>Deterministic rules.</b> Position limits and checklists are plain code with versioned rule files, not a model's opinion.</li>
-        <li><b>Evidence first.</b> Financial data comes from SEC XBRL filings; quarterly values derived from year-to-date totals are marked and explained.</li>
-        <li><b>AI as skeptic, with guardrails.</b> In the full workflow the model writes counter-arguments; every number and quote it uses is checked against the evidence, and advice is blocked.</li>
+        {[t.how1, t.how2, t.how3].map(([head, body]) => <li key={head}><b>{head}</b> {body}</li>)}
       </ul>
     </section>
   );

@@ -5,5 +5,9 @@
 !fixtures/rules/demo.yaml
 !fixtures/demo_portfolios/**
 !fixtures/example_theses.yaml
+!fixtures/evals/**
+!backend/prompts/**
 **/__pycache__
 **/*.pyc
+**/smoke
+**/partial.json

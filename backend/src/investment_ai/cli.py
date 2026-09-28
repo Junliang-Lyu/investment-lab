@@ -13,6 +13,7 @@ Private drafts are written to private-data/memos/ (git-ignored).
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -99,8 +100,75 @@ def main(argv: list[str] | None = None, *, provider=None, client=None, ledger=No
     r.add_argument("run_id")
     r.add_argument("--quarters", type=int, default=8)
     r.add_argument("--out", default=str(PRIVATE_MEMOS))
+    ev = sub.add_parser("eval-skeptic", help="run the adversarial eval set against a model (about $0.03-0.06 per case)")
+    ev.add_argument("--provider", default="anthropic", choices=["anthropic", "gemini"])
+    ev.add_argument("--only", default="", help="comma-separated case ids")
+    ev.add_argument("--limit", type=int, default=0)
+    ev.add_argument("--out", default="", help="results directory (default fixtures/evals/results)")
+    ev.add_argument("--resume", action="store_true", help="continue from partial.json in the results directory")
+    ev.add_argument("--smoke", action="store_true", help="only the 8 cases marked smoke (results go to results/smoke)")
+    ev.add_argument("--max-usd", type=float, default=2.0,
+                    help="stop starting new cases once this much has been spent, including resumed cases (default $2)")
+    ev.add_argument("--max-minutes", type=float, default=8.0,
+                    help="stop starting new cases after this many minutes (default 8); rerun with --resume")
+    er = sub.add_parser("eval-memo-review", help="eval the Lab AI review of memo answers (about $0.01-0.02 per case)")
+    er.add_argument("--provider", default="anthropic", choices=["anthropic", "gemini"])
+    er.add_argument("--only", default="", help="comma-separated case ids")
+    er.add_argument("--limit", type=int, default=0)
+    er.add_argument("--out", default="", help="results directory (default fixtures/evals/results/review)")
+    er.add_argument("--resume", action="store_true", help="continue from partial.json in the results directory")
+    er.add_argument("--max-usd", type=float, default=0.5, help="stop starting new cases once this much has been spent")
+    er.add_argument("--max-minutes", type=float, default=8.0, help="stop starting new cases after this many minutes")
     args = ap.parse_args(argv)
     load_env_file()
+
+    if args.cmd in ("eval-skeptic", "eval-memo-review"):
+        if args.cmd == "eval-skeptic":
+            from . import evals
+        else:
+            from . import evals_review as evals
+        cases = evals.load_cases()
+        if args.only:
+            wanted = set(args.only.split(","))
+            cases = [c for c in cases if c["id"] in wanted]
+        if args.limit:
+            cases = cases[:args.limit]
+        smoke = getattr(args, "smoke", False)
+        if smoke:
+            cases = [c for c in cases if c.get("smoke")]
+        out_dir = Path(args.out) if args.out else (evals.RESULTS / "smoke" if smoke else evals.RESULTS)
+        partial = out_dir / "partial.json"
+        done = []
+        if args.resume and partial.exists():
+            done = json.loads(partial.read_text(encoding="utf-8"))["cases"]
+            print(f"resuming: {len(done)} case(s) already done")
+        elif partial.exists():
+            print(f"note: {partial} exists; pass --resume to continue it (starting over)")
+        client = client or EdgarClient(cache_dir=DEFAULT_CACHE)
+        companies = {}
+
+        def pack_for(ticker, thesis):  # exactly the Lab's evidence: numbers, segments and retrieved filing text
+            from .lab_pack import lab_pack, load_lab_company
+            if ticker not in companies:
+                companies[ticker] = load_lab_company(client, ticker)
+            return lab_pack(companies[ticker], thesis)
+
+        def checkpoint(rows):
+            out_dir.mkdir(parents=True, exist_ok=True)
+            partial.write_text(json.dumps({"cases": rows}, ensure_ascii=False), encoding="utf-8")
+
+        report = evals.run_eval(cases, pack_for, provider or make_provider(args.provider), ledger or Ledger(eval_budget=True),
+                                done=done, checkpoint=checkpoint, max_minutes=args.max_minutes, max_usd=args.max_usd)
+        s = report["summary"]
+        if not report["complete"]:
+            print(f"INCOMPLETE: {s['cases']}/{len(cases)} cases done, ${s['total_cost_usd']:.2f} so far. "
+                  "Run the same command again with --resume (raise --max-usd only if you mean to spend more).")
+            return 4
+        path = evals.write_results(report, out_dir)
+        partial.unlink(missing_ok=True)
+        print(json.dumps({k: v for k, v in s.items() if k != "by_category"}, indent=1))
+        print(f"{'PASSED' if s['passed'] else 'FAILED'} - results: {path}")
+        return 0 if s["passed"] else 3
 
     if args.cmd == "theses":
         client = client or EdgarClient(cache_dir=DEFAULT_CACHE)
@@ -116,7 +184,6 @@ def main(argv: list[str] | None = None, *, provider=None, client=None, ledger=No
         fin, pack = build_pack(client, pm.ticker, pm.one_liner, None, not args.no_fundamentals)
         ledger = ledger or Ledger()
         if args.from_json:
-            import json
             result = evaluate_supplied_review(pm, pack, json.loads(Path(args.from_json).read_text(encoding="utf-8")),
                                               ledger, args.lang)
         else:
@@ -195,7 +262,6 @@ def main(argv: list[str] | None = None, *, provider=None, client=None, ledger=No
         return 0
 
     if args.from_json:
-        import json
         data = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
         result = evaluate_supplied(pack, args.thesis, data, ledger or Ledger(), surface=args.surface, language=args.lang,
                                    meta={"keywords": kw, "fundamentals": not args.no_fundamentals})

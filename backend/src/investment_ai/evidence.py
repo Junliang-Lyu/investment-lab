@@ -25,7 +25,10 @@ LABELS = {
            "long_term_debt_noncurrent": "长期债务（非流动）", "debt_current": "一年内到期债务", "total_debt": "总债务",
            "net_cash": "净现金（现金与短期投资 − 总债务）", "segment_revenue": "分部收入",
            "segment_operating_income": "分部营业利润", "segment_operating_margin": "分部营业利润率",
-           "product_revenue": "产品线收入"},
+           "product_revenue": "产品线收入",
+           "gross_margin_chg": "毛利率变化（百分点）", "operating_margin_chg": "营业利润率变化（百分点）",
+           "fcf_margin_chg": "自由现金流利润率变化（百分点）", "capex_to_revenue_chg": "资本开支占收入比变化（百分点）",
+           "capex_to_cfo_chg": "资本开支占经营现金流比变化（百分点）"},
     "en": {"revenue": "revenue", "gross_profit": "gross profit", "gross_margin": "gross margin",
            "operating_income": "operating income", "operating_margin": "operating margin", "net_income": "net income",
            "cfo": "operating cash flow", "capex": "capital expenditures", "fcf": "free cash flow",
@@ -35,7 +38,11 @@ LABELS = {
            "cash_and_investments": "cash and short-term investments", "long_term_debt_noncurrent": "long-term debt",
            "debt_current": "current debt", "total_debt": "total debt", "net_cash": "net cash",
            "segment_revenue": "segment revenue", "segment_operating_income": "segment operating income",
-           "segment_operating_margin": "segment operating margin", "product_revenue": "product revenue"},
+           "segment_operating_margin": "segment operating margin", "product_revenue": "product revenue",
+           "gross_margin_chg": "gross margin change (pp)", "operating_margin_chg": "operating margin change (pp)",
+           "fcf_margin_chg": "free cash flow margin change (pp)",
+           "capex_to_revenue_chg": "capex as % of revenue change (pp)",
+           "capex_to_cfo_chg": "capex as % of operating cash flow change (pp)"},
 }
 SUFFIX = {"zh": {"yoy": "同比", "qoq": "环比"}, "en": {"yoy": "YoY", "qoq": "QoQ"}}
 
@@ -55,7 +62,7 @@ class EvidenceItem(BaseModel):
     period_end: str
     fiscal_label: str | None
     value: float
-    unit: str  # "USD" or "ratio"
+    unit: str  # "USD", "ratio" or "pp" (percentage-point change of a ratio)
     display: str
     derived: bool
     note: str | None = None
@@ -87,11 +94,21 @@ class EvidencePack(BaseModel):
     def ids(self) -> set[str]:
         return {i.fact_id for i in self.items}
 
+    def recent(self, periods: int) -> "EvidencePack":
+        """Only the latest `periods` period ends (growth rates were computed on the full history)."""
+        ends = sorted({i.period_end for i in self.items})[-periods:]
+        return self.model_copy(update={"items": [i for i in self.items if i.period_end in ends]})
+
+    def short_id(self, fact_id: str) -> str:
+        """The id shown to the model: without the repeated CIK prefix (saves about a fifth of the prompt)."""
+        prefix = f"{self.cik}:"
+        return fact_id[len(prefix):] if fact_id.startswith(prefix) else fact_id
+
     def to_prompt_table(self, language: str = "zh") -> str:
         lines = ["fact_id | period | label | value | derived"]
         for i in self.items:
-            lines.append(f"{i.fact_id} | {i.fiscal_label or i.period_end} | {label(i.metric, language, i.member)} | {i.display} | "
-                         f"{'yes' if i.derived else 'no'}")
+            lines.append(f"{self.short_id(i.fact_id)} | {i.fiscal_label or i.period_end} | "
+                         f"{label(i.metric, language, i.member)} | {i.display} | {'y' if i.derived else 'n'}")
         return "\n".join(lines)
 
 
@@ -145,6 +162,9 @@ def add_segments(items: list[EvidenceItem], fin: CompanyFinancials, series: dict
                         display=fmt_ratio(m), derived=True, note="segment operating income / segment revenue"))
 
 
+PP_METRICS = ("gross_margin", "operating_margin", "fcf_margin", "capex_to_revenue", "capex_to_cfo")
+
+
 def build_evidence(ticker: str, fin: CompanyFinancials, segments: dict | None = None,
                    passages: list[Passage] | None = None) -> EvidencePack:
     items: list[EvidenceItem] = []
@@ -184,6 +204,22 @@ def build_evidence(ticker: str, fin: CompanyFinancials, segments: dict | None = 
                     fact_id=f"{fin.cik}:{metric}_{tag}:{q.end}", metric=f"{metric}_{tag}", period_end=str(q.end),
                     fiscal_label=q.fiscal_label, value=change, unit="ratio", display=fmt_ratio(change), derived=True,
                     note=f"{metric} {q.end} vs {base_row.end}"))
+    # Percentage-point changes of margins and ratios, so "margin fell 14.1 points" can be cited, not computed.
+    ratio_at = {(i.metric, i.period_end): i for i in items if i.unit == "ratio" and not i.member}
+    for q in rows:
+        prior_year = next((p for e, p in by_end.items() if abs((q.end - timedelta(days=365) - e).days) <= 20), None)
+        prior_q = next((p for e, p in by_end.items() if 75 <= (q.end - e).days <= 105), None)
+        for metric in PP_METRICS:
+            cur = ratio_at.get((metric, str(q.end)))
+            for tag, base_row in (("yoy", prior_year), ("qoq", prior_q)):
+                base = ratio_at.get((metric, str(base_row.end))) if base_row else None
+                if not cur or not base:
+                    continue
+                pts = round((cur.value - base.value) * 100, 1)
+                items.append(EvidenceItem(
+                    fact_id=f"{fin.cik}:{metric}_chg_{tag}:{q.end}", metric=f"{metric}_chg_{tag}", period_end=str(q.end),
+                    fiscal_label=q.fiscal_label, value=pts, unit="pp", display=f"{pts:+.1f} pp", derived=True,
+                    note=f"{metric} {q.end} minus {base_row.end}, in percentage points"))
     if segments:
         add_segments(items, fin, segments)
     return EvidencePack(ticker=ticker.upper(), company=fin.name, cik=fin.cik, items=items, passages=passages or [])

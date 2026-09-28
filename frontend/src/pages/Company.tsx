@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, Snapshot } from "../api";
 import { metric, pct, usd } from "../format";
+import { navigate } from "../App";
+import { useLang } from "../i18n";
 
 const ROWS = ["revenue", "gross_margin", "operating_income", "operating_margin", "net_income", "cfo", "capex", "fcf",
   "cash_and_investments", "net_cash"];
@@ -13,6 +15,7 @@ function segmentMargin(rev?: number, oi?: number): string {
 }
 
 export default function Company() {
+  const { t, lang } = useLang();
   const [tickers, setTickers] = useState<string[]>([]);
   const [ticker, setTicker] = useState("GOOG");
   const [data, setData] = useState<Snapshot | null>(null);
@@ -22,9 +25,9 @@ export default function Company() {
   useEffect(() => { api.companies().then((c) => setTickers(c.map((x) => x.ticker))).catch(() => setTickers(["GOOG"])); }, []);
   useEffect(() => {
     setLoading(true); setError(null);
-    api.snapshot(ticker).then(setData).catch((e) => { setData(null); setError(String(e.message ?? e)); })
+    api.snapshot(ticker, lang).then(setData).catch((e) => { setData(null); setError(String(e.message ?? e)); })
       .finally(() => setLoading(false));
-  }, [ticker]);
+  }, [ticker, lang]);
 
   const scroller = useRef<HTMLDivElement>(null);
   // Newest quarter is on the right; start there so narrow screens see the latest numbers first.
@@ -37,17 +40,18 @@ export default function Company() {
   }, [data]);
   return (
     <section>
-      <h1>Financial snapshot</h1>
-      <p className="lede">Company totals from SEC filings. Values marked * are computed from reported figures (for example Q4 = full year − nine months); hover or long-press a value to see how. Scroll sideways for older quarters.</p>
+      <h1>{t.snapTitle}</h1>
+      <p className="lede">{t.snapLede}</p>
       <div className="toolbar">
-        <label>Company{" "}
+        <label>{t.company}{" "}
           <select value={ticker} onChange={(e) => setTicker(e.target.value)}>
             {tickers.map((t) => <option key={t}>{t}</option>)}
           </select>
         </label>
         {data && <span className="muted">{data.company} · CIK {data.cik}</span>}
+        <button type="button" className="secondary" onClick={() => navigate("/lab/skeptic", { ticker })}>{t.snapNext(ticker)} →</button>
       </div>
-      {loading && <p className="muted">Loading filings…</p>}
+      {loading && <p className="muted">{t.loadingFilings}</p>}
       {error && <p className="error">{error}</p>}
       {data && (
         <>
@@ -68,7 +72,7 @@ export default function Company() {
                         if (!m) return <td key={q.end} className="muted">–</td>;
                         const text = metric(m.value, m.unit) + (m.derived && m.unit === "USD" ? "*" : "");
                         return (
-                          <td key={q.end} title={m.derivation ?? "As reported"} className={m.value < 0 ? "neg" : ""}>
+                          <td key={q.end} title={m.derivation ?? t.asReported} className={m.value < 0 ? "neg" : ""}>
                             {m.source ? <a href={m.source} target="_blank" rel="noreferrer">{text}</a> : text}
                           </td>
                         );
@@ -81,10 +85,10 @@ export default function Company() {
           </div>
           {segments.length > 0 && (
             <>
-              <h3>Segments, latest quarter ({data.segments[0].period_end})</h3>
+              <h3>{t.segmentsTitle} ({data.segments[0].period_end})</h3>
               <div className="scroll segtable">
                 <table>
-                  <thead><tr><th>Segment</th><th>Revenue</th><th>Op. income</th><th>Margin*</th></tr></thead>
+                  <thead><tr><th>{t.segment}</th><th>{t.revenue}</th><th>{t.opIncome}</th><th>{t.margin}</th></tr></thead>
                   <tbody>
                     {segments.map(([member, m]) => (
                       <tr key={member}>
@@ -94,7 +98,7 @@ export default function Company() {
                             {!s ? "–" : s.source ? <a href={s.source} target="_blank" rel="noreferrer">{usd(s.value)}</a> : usd(s.value)}
                           </td>
                         ))}
-                        <td title="segment operating income / segment revenue">
+                        <td title={t.marginTitle}>
                           {segmentMargin(m.segment_revenue?.value, m.segment_operating_income?.value)}
                         </td>
                       </tr>

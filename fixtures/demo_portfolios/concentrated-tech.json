@@ -2,6 +2,8 @@
   "id": "concentrated-tech",
   "name": "Concentrated Tech",
   "description": "Fictional portfolio: two large tech stocks and a lot of cash, no memos, review overdue. Shows single-stock, theme and memo rules.",
+  "name_zh": "集中科技",
+  "description_zh": "虚构组合：两只大型科技股加大量现金，没有 memo，复盘已逾期。用来展示单股、主题和 memo 规则。",
   "fictional": true,
   "price_date": "2026-09-25",
   "as_of": "2026-09-25",

@@ -22,7 +22,7 @@ def test_image_copies_only_public_code_and_demo_fixtures():
         assert not re.search(r"private|\.env|v0_draft|data-cache|memo", src, re.I), src
         assert src != "." and not src.endswith("/"), f"broad COPY: {src}"
         assert (ROOT / src).exists(), f"missing: {src}"
-    assert "fixtures/rules/demo.yaml" in sources
+    assert "fixtures/rules/demo.yaml" in sources and "backend/prompts" in sources
 
 
 def test_dockerignore_is_allowlist():
@@ -55,7 +55,12 @@ def test_compose_api_has_no_ports_and_no_database_network():
     assert api["networks"] == ["invest"]
     assert api["read_only"] is True and "ALL" in api["cap_drop"]
     assert api["deploy"]["resources"]["limits"]["memory"] == "256M"
-    assert "ANTHROPIC_API_KEY" not in api.get("environment", {})  # no LLM on the public Lab yet
+    env = api.get("environment", {})
+    # The key only comes from the server's env file, and the skeptic is off unless explicitly enabled.
+    assert env["ANTHROPIC_API_KEY"] == "${INVEST_ANTHROPIC_API_KEY:-}"
+    assert env["LAB_SKEPTIC_ENABLED"] == "${LAB_SKEPTIC_ENABLED:-0}"
+    assert env["LAB_DAILY_BUDGET_USD"] == "${LAB_DAILY_BUDGET_USD:-0.5}"
+    assert "invest_lab_data:/data/lab" in api["volumes"]
     assert set(compose["services"]["caddy"]) == {"volumes", "networks"}  # override only adds mounts
 
 

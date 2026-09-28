@@ -105,7 +105,9 @@ def test_segment_fact_without_support_still_flagged(pack_with_text):
     _, pack = pack_with_text
     out = good_output(pack)
     out["bull_case"][1] = {"claim": "Waymo 的收入在快速增长。", "type": "fact", "evidence_refs": [item_id(pack)], "quotes": []}
-    assert validate_output(out, pack, THESIS)[1].mislabeled
+    assert validate_output(out, pack, THESIS, relabel=False)[1].mislabeled
+    obj, report = validate_output(out, pack, THESIS)
+    assert report.relabeled and obj.bull_case[1].type == "inference"
 
 
 def item_id(pack):
@@ -132,3 +134,15 @@ def test_retrieve_diverse_dedupes_and_spreads():
     dup = Passage(source_id="b:item1:1", item="item1", text=ps[0].text)
     out = retrieve_diverse(ps + [dup], ["Waymo", "competition", "capital expenditures"], k=5, per_term=1)
     assert [p.source_id for p in out] == ["a:item1:1", "a:item1a:1", "a:item7:1"]
+
+
+def test_heading_formats_seen_in_real_10ks():
+    html = """<html><body>
+    <table><tr><td></td><td></td></tr><tr><td>Item 1.</td><td>Business</td></tr></table>
+    <p>We seek to be the most customer-centric company. """ + "Word " * 40 + """</p>
+    <p>Item 1</p><p>A running page header must not end the section. """ + "More " * 40 + """</p>
+    <p>Item 1A—Risk Factors</p><p>Competition is intense. """ + "Risk " * 40 + """</p>
+    <p>Item 1B. Unresolved Staff Comments</p><p>None.</p></body></html>"""
+    secs = split_sections(html_to_text(html))
+    assert "customer-centric" in secs["item1"] and "running page header" in secs["item1"]
+    assert "Competition is intense" in secs["item1a"] and "Unresolved" not in secs["item1a"]

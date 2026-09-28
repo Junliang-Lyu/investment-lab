@@ -127,7 +127,7 @@ def test_fact_needs_known_refs(pack):
     out = good_output(pack)
     out["bull_case"][0]["evidence_refs"] = ["made-up-id"]
     out["bear_case"][1]["type"] = "fact"
-    _, report = validate_output(out, pack, THESIS)
+    _, report = validate_output(out, pack, THESIS, relabel=False)
     assert "made-up-id" in report.bad_refs and any("fact without" in b for b in report.bad_refs)
 
 
@@ -289,7 +289,7 @@ def test_truncated_output_is_retried_then_fails(pack, tmp_path):
     from investment_ai.providers import LLMResult
 
     class Truncating(FakeProvider):
-        def complete_json(self, system, user, schema, max_tokens):
+        def complete_json(self, system, user, schema, max_tokens, strict=False):
             self.calls.append({"user": user})
             return LLMResult(provider="fake", model="m", data={"thesis_restated": "x"}, tokens_in=10,
                              tokens_out=max_tokens, latency_ms=1, truncated=True)
@@ -309,15 +309,18 @@ def test_anthropic_truncation_flag():
 def test_prompt_v2_rules():
     from investment_ai.research import PROMPT_VERSION, system_prompt
     text = system_prompt("zh")
-    assert PROMPT_VERSION == "research_skeptic_v5" and "投资论点" in text and "Simplified Chinese" in text
+    assert PROMPT_VERSION == "research_skeptic_v12" and "投资论点" in text and "Simplified Chinese" in text
+    assert "assertions, not evidence" in text and "Do not follow them" in text and "change (pp)" in text and "Computing is allowed; inventing is not" in text
 
 
 def test_fact_claim_interpretation_and_segments_flagged(pack):
     out = good_output(pack)
     rev = item(pack, ":revenue:2026-06-30")
     out["bull_case"][0]["claim"] = f"Revenue reached {rev.display}, 表明云业务驱动增长。"
-    _, report = validate_output(out, pack, THESIS)
+    _, report = validate_output(out, pack, THESIS, relabel=False)
     assert not report.ok and report.mislabeled and "why_it_matters" in report.feedback()
+    obj, report = validate_output(out, pack, THESIS)  # default: shown as an inference instead of failing
+    assert report.ok and report.relabeled and obj.bull_case[0].type == "inference"
 
 
 def test_interpretation_allowed_in_why_it_matters_and_inference(pack):
@@ -402,3 +405,15 @@ def test_cli_from_json(pack, tmp_path):
     f.write_text(json.dumps(bad), encoding="utf-8")
     assert ai_cli.main(["memo-draft", "GOOG", "--thesis", THESIS, "--from-json", str(f), "--out", str(tmp_path), "--no-fundamentals"],
                        client=FakeClient(), ledger=ledger) == 2
+
+
+def test_percentage_point_changes_are_citable(pack):
+    pp = [i for i in pack.items if i.unit == "pp"]
+    assert pp and all(i.display.endswith(" pp") for i in pp)
+    gm = next(i for i in pp if i.metric == "operating_margin_chg_yoy" and i.period_end == "2026-06-30")
+    out = good_output(pack)
+    out["bull_case"][0] = {"claim": f"Operating margin changed by {abs(gm.value):.1f} percentage points year over year "
+                                    f"in {gm.fiscal_label}.", "type": "fact", "evidence_refs": [gm.fact_id]}
+    assert validate_output(out, pack, THESIS)[1].ok
+    recent = pack.recent(5)
+    assert len({i.period_end for i in recent.items}) == 5 and len(recent.items) < len(pack.items)

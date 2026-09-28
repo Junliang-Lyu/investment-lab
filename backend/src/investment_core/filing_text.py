@@ -13,13 +13,16 @@ from html.parser import HTMLParser
 
 from pydantic import BaseModel
 
+SEP = r"\s*[\.:\-—–]?\s*"  # "Item 1. Business", "Item 1—Business", "Item 1: Business"
 ITEMS = {
-    "item1": r"item\s*1\.?\s*business",
-    "item1a": r"item\s*1a\.?\s*risk\s*factors",
-    "item7": r"item\s*7\.?\s*management[’'`s]*\s*discussion",
-    "item2_10q": r"item\s*2\.?\s*management[’'`s]*\s*discussion",
+    "item1": r"item\s*1" + SEP + r"business",
+    "item1a": r"item\s*1a" + SEP + r"risk\s*factors",
+    "item7": r"item\s*7" + SEP + r"management[’'`s]*\s*discussion",
+    "item2_10q": r"item\s*2" + SEP + r"management[’'`s]*\s*discussion",
 }
-NEXT = r"\n\s*item\s*\d+[a-c]?\.?\s*[a-z]"
+# The next section starts at a heading line with punctuation after the number ("Item 1A. Risk Factors").
+# Bare running page headers ("Item 1" at the top of every page, as in Microsoft's 10-K) do not end a section.
+NEXT = r"\n\s*item\s*\d+[a-c]?\s*[\.:\-—–]\s*[a-z]"
 BLOCK = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "table"}
 
 
@@ -31,32 +34,52 @@ class Passage(BaseModel):
 
 
 class _Text(HTMLParser):
+    """Visible text. Tables are dropped (financial data), except short tables that hold a section heading
+    ("Item 1A." | "Risk Factors" in two cells, as in Amazon's 10-K); those become one line."""
+
+    VOID = ("br", "img", "hr", "meta", "link", "input")
+
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.skip = 0
         self.stack: list[bool] = []
+        self.tables: list[dict] = []  # open tables: {"cells": n, "parts": [...]}
+
+    def _out(self) -> list[str]:
+        return self.tables[-1]["parts"] if self.tables else self.parts
 
     def handle_starttag(self, tag, attrs):
         style = dict(attrs).get("style", "") or ""
-        hidden = tag in ("table", "script", "style", "ix:header") or "display:none" in style.replace(" ", "").lower()
-        if tag not in ("br", "img", "hr", "meta", "link", "input"):
+        hidden = tag in ("script", "style", "ix:header") or "display:none" in style.replace(" ", "").lower()
+        if tag == "table":
+            self.tables.append({"cells": 0, "parts": []})
+        elif tag in ("td", "th") and self.tables:
+            self.tables[-1]["cells"] += 1
+            self._out().append(" ")
+        if tag not in self.VOID:
             self.stack.append(hidden)
             self.skip += hidden
-        if tag in BLOCK:
-            self.parts.append("\n")
+        if tag in BLOCK and tag != "table":
+            self._out().append("\n")
 
     def handle_endtag(self, tag):
-        if tag in ("br", "img", "hr", "meta", "link", "input"):
+        if tag in self.VOID:
             return
         if self.stack:
             self.skip -= self.stack.pop()
+        if tag == "table" and self.tables:
+            t = self.tables.pop()
+            text = re.sub(r"\s+", " ", "".join(t["parts"])).strip()
+            if len(text) <= 120 and re.match(r"(?i)(?:part\s+[iv]+\s*)?item\s*\d+[a-c]?\b", text):
+                self._out().append("\n" + text + "\n")
+            return
         if tag in BLOCK:
-            self.parts.append("\n")
+            self._out().append("\n")
 
     def handle_data(self, data):
         if not self.skip:
-            self.parts.append(data)
+            self._out().append(data)
 
 
 def html_to_text(html: str) -> str:

@@ -22,3 +22,10 @@ deploy/release/
 
 # Public data cache (SEC responses)
 data-cache/
+
+# Eval scratch (only results/latest.json and dated full runs are published)
+fixtures/evals/results/smoke/
+fixtures/evals/results/partial.json
+fixtures/evals/results/check/
+fixtures/evals/results/review/partial.json
+_to_delete/

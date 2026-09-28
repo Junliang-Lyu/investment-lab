@@ -12,22 +12,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONPATH=/app/backend/src \
     FIXTURES_DIR=/app/fixtures \
-    EDGAR_CACHE_DIR=/data/edgar
+    EDGAR_CACHE_DIR=/data/edgar \
+    LAB_DATA_DIR=/data/lab
 
 WORKDIR /app
 
 COPY deploy/requirements-api.txt /tmp/requirements-api.txt
 RUN pip install -r /tmp/requirements-api.txt \
  && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
- && mkdir -p /data/edgar && chown app:app /data/edgar
+ && mkdir -p /data/edgar /data/lab && chown app:app /data/edgar /data/lab
 
 COPY backend/src/investment_core backend/src/investment_core
 COPY backend/src/investment_data backend/src/investment_data
 COPY backend/src/investment_ai backend/src/investment_ai
 COPY backend/src/investment_api backend/src/investment_api
+COPY backend/prompts backend/prompts
 COPY fixtures/rules/demo.yaml fixtures/rules/demo.yaml
 COPY fixtures/demo_portfolios fixtures/demo_portfolios
 COPY fixtures/example_theses.yaml fixtures/example_theses.yaml
+COPY fixtures/evals fixtures/evals
 
 USER app
 EXPOSE 8081

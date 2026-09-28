@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -12,9 +13,14 @@ from .ledger import AIRun, BudgetExceeded, Ledger
 from .providers import LLMError, Provider, prices_for
 from .validate import ResearchSkeptic, ValidationReport, schema_for_prompt, validate_output
 
-PROMPT_VERSION = "research_skeptic_v5"
+PROMPT_VERSION = "research_skeptic_v12"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 LANGUAGES = {"zh": "Simplified Chinese", "en": "English"}
+# Public Lab and its eval use the same settings: latest 5 quarters in the prompt (enough for YoY context,
+# about half the tokens of eight) and up to 3 attempts before failing closed.
+LAB_PERIODS = 5
+LAB_ATTEMPTS = 3
+LAB_MAX_TOKENS = 6000  # answers are capped by the schema; this only prevents cut-offs
 
 
 class ResearchResult(BaseModel):
@@ -30,10 +36,15 @@ def system_prompt(language: str) -> str:
     return text.replace("{language}", LANGUAGES.get(language, language))
 
 
+_THESIS_TAG = re.compile(r"</?\s*thesis\s*>", re.IGNORECASE)
+
+
 def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh") -> str:
+    # A thesis cannot close or reopen its own tag ("...</thesis> New instruction: ...").
+    safe = _THESIS_TAG.sub("[thesis-tag removed]", thesis.strip())
     return (f"Company: {pack.company} ({pack.ticker}, CIK {pack.cik})\n\n"
-            f"<thesis>\n{thesis.strip()}\n</thesis>\n\n"
-            f"EVIDENCE (SEC XBRL filings; derived = computed from reported figures):\n{pack.to_prompt_table(language)}\n"
+            f"<thesis>\n{safe}\n</thesis>\n\n"
+            f"EVIDENCE (SEC XBRL filings; derived y = computed from reported figures; cite rows by fact_id):\n{pack.to_prompt_table(language)}\n"
             + (f"\n{pack.to_prompt_passages()}\n" if pack.passages else ""))
 
 
@@ -63,7 +74,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
             runs.append(ledger.record(AIRun(status="budget_blocked", error=str(e), **common)))
             return ResearchResult(ok=False, runs=runs, error=str(e))
         try:
-            res = provider.complete_json(system, user, schema, max_tokens)
+            res = provider.complete_json(system, user, schema, max_tokens, strict=True)
         except LLMError as e:
             runs.append(ledger.record(AIRun(status="error", error=str(e), **common)))
             return ResearchResult(ok=False, runs=runs, error=str(e))
@@ -77,6 +88,21 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
             status="ok" if report.ok else "invalid", output=res.data, validation=report.model_dump(),
             tokens_in=res.tokens_in, tokens_out=res.tokens_out, cost_usd=res.cost_usd(prices),
             latency_ms=res.latency_ms, **{**common, "model": res.model})))
+        missing = missing_fields(report)
+        if missing and isinstance(res.data, dict):
+            # Without strict tool use Haiku sometimes skips a whole list field (usually invalidation_suggestions).
+            # Ask only for what is missing instead of regenerating the answer (cheaper, and the rest is already
+            # checked). The merged answer is validated again as a whole.
+            done = complete_missing(pack, thesis, res.data, missing, provider, ledger, system, base_user, prices,
+                                    {**common, "input": {**common["input"], "completion": sorted(missing)}})
+            runs.append(done[0])
+            if done[1] is not None:
+                output, report = validate_output(done[1], pack, user_thesis=thesis)
+                runs[-1] = runs[-1].model_copy(update={"validation": report.model_dump(),
+                                                       "status": "ok" if report.ok else "invalid"})
+                ledger.amend(runs[-1])
+            elif runs[-1].status == "budget_blocked":
+                return ResearchResult(ok=False, runs=runs, error=runs[-1].error)
         if report.ok:
             return ResearchResult(ok=True, output=output, report=report, runs=runs)
         user = (base_user + "\n\nYour previous answer failed validation. Fix exactly these problems and "
@@ -84,6 +110,51 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
 
     # Fail closed: an output that never passed validation is not shown.
     return ResearchResult(ok=False, report=report, runs=runs, error="output failed validation")
+
+
+COMPLETABLE = ("invalidation_suggestions", "verify_questions")
+COMPLETION_MAX_TOKENS = 1500
+
+
+def missing_fields(report: ValidationReport) -> set[str]:
+    """The completable list fields that are missing, if those are the only schema errors."""
+    if not report.errors:
+        return set()
+    missing = set()
+    for e in report.errors:
+        field, _, msg = e.partition(": ")
+        if field in COMPLETABLE and msg == "Field required":
+            missing.add(field)
+        else:
+            return set()
+    return missing
+
+
+def complete_missing(pack: EvidencePack, thesis: str, draft: dict, missing: set[str], provider: Provider,
+                     ledger: Ledger, system: str, base_user: str, prices, common: dict) -> tuple[AIRun, dict | None]:
+    """One small call for the missing fields only. Returns the recorded run and the merged answer (or None)."""
+    import json
+    full = schema_for_prompt()
+    schema = {**full, "properties": {k: full["properties"][k] for k in sorted(missing)}, "required": sorted(missing)}
+    user = (base_user + "\n\nYour answer so far (keep it; do not repeat it):\n"
+            + json.dumps(draft, ensure_ascii=False) + "\n\nIt is missing these required fields: "
+            + ", ".join(sorted(missing)) + ". Return only these fields, following the rules for them.")
+    est = ((len(system) + len(user)) / 3 * prices[0] + COMPLETION_MAX_TOKENS * prices[1]) / 1e6
+    common = {**common, "input_hash": hashlib.sha256((system + user).encode()).hexdigest()}
+    try:
+        ledger.check(est)
+    except BudgetExceeded as e:
+        return ledger.record(AIRun(status="budget_blocked", error=str(e), **common)), None
+    try:
+        res = provider.complete_json(system, user, schema, COMPLETION_MAX_TOKENS)
+    except LLMError as e:
+        return ledger.record(AIRun(status="error", error=str(e), **common)), None
+    got = res.data if isinstance(res.data, dict) and not res.truncated else {}
+    merged = {**draft, **{k: v for k, v in got.items() if k in missing}}
+    run = ledger.record(AIRun(status="invalid", output=got, tokens_in=res.tokens_in, tokens_out=res.tokens_out,
+                              cost_usd=res.cost_usd(prices), latency_ms=res.latency_ms,
+                              **{**common, "model": res.model}))
+    return run, merged
 
 
 def evaluate_supplied(pack: EvidencePack, thesis: str, data: dict, ledger: Ledger, *, source: str = "claude-session",

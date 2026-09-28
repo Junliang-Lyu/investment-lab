@@ -2,6 +2,8 @@
   "id": "cash-heavy-starter",
   "name": "Cash-Heavy Starter",
   "description": "Fictional portfolio: mostly cash and one stock. Try opening a new position on the watchlist and see the paper-to-live checks.",
+  "name_zh": "现金为主的起步组合",
+  "description_zh": "虚构组合：大部分是现金加一只股票。试着开一个观察名单上的新仓位，看看模拟到实盘的检查。",
   "fictional": true,
   "price_date": "2026-09-25",
   "as_of": "2026-09-25",

@@ -12,7 +12,8 @@ It never recommends trades and never places orders. See `docs/DESIGN.md`.
 - Done: 13F institutional holdings (`python -m investment_data 13f BRK-B`), segment figures and filing-text evidence with verbatim quote checks.
 - Done: public Lab web app: FastAPI (`investment_api`) + Vite/React (`frontend/`) with a financial snapshot page and the pre-trade gate on fictional portfolios. Deployment files in `deploy/`, runbook in `docs/DEPLOY.md`.
 - Live: https://invest.jun-liang-lyu.com (first release 2026-09-28).
-- Next: Lab card on the main site, the eval set, then the LLM skeptic on the Lab.
+- Done: AI skeptic for the Lab (`/lab/skeptic`, off until enabled), a 32-case adversarial eval set (`python -m investment_ai eval-skeptic`), and a Chinese UI.
+- Next: run the eval against the live model, then switch the skeptic on.
 
 ## Run locally (Windows PowerShell)
 

@@ -19,20 +19,59 @@ from investment_core.importers import load_portfolio, load_rule_set
 from investment_core.models import Asset, AssetType, Sleeve, TradeProposal
 from investment_core.segments import member_label, segment_series
 
+from .i18n import translate_findings, translate_gate
+
 log = logging.getLogger("investment_api.lab")
 
 TICKER = re.compile(r"^[A-Z][A-Z.\-]{0,9}$")
 
 
+class CustomPosition(BaseModel):
+    symbol: str = Field(max_length=10)
+    market_value: float = Field(gt=0, le=1e10)
+    sleeve: Literal["core", "satellite"] = "satellite"
+
+
+class CustomPortfolio(BaseModel):
+    """A visitor's own holdings, typed in the browser. Used for this one check and never stored."""
+    cash: float = Field(ge=0, le=1e10)
+    positions: list[CustomPosition] = Field(default_factory=list, max_length=40)
+
+
 class GateRequest(BaseModel):
-    portfolio_id: str = Field(max_length=40)
+    portfolio_id: str = Field(max_length=40)  # a demo portfolio id, or "custom" with `custom`
+    custom: CustomPortfolio | None = None
+    memo_id: str | None = Field(default=None, max_length=40)  # a Lab memo for this symbol (DESIGN §11.5)
     symbol: str = Field(max_length=10)
     side: Literal["buy", "sell"] = "buy"
     amount_usd: float = Field(gt=0, le=10_000_000)
     attestations: dict[str, bool] = Field(default_factory=dict)
 
 
-def build_router(settings, client_factory) -> APIRouter:
+def custom_snapshot(p: CustomPortfolio):
+    """Snapshot and context from typed-in holdings (ETFs typed as core, stocks as satellite)."""
+    from datetime import date
+    from investment_core.models import Context, Position, Snapshot
+    merged: dict[str, CustomPosition] = {}
+    for pos in p.positions:
+        sym = pos.symbol.strip().upper()
+        if not TICKER.match(sym):
+            raise HTTPException(422, f"invalid symbol: {pos.symbol}")
+        if sym in merged:
+            merged[sym] = merged[sym].model_copy(update={"market_value": merged[sym].market_value + pos.market_value})
+        else:
+            merged[sym] = pos.model_copy(update={"symbol": sym})
+    nav = p.cash + sum(x.market_value for x in merged.values())
+    if nav <= 0:
+        raise HTTPException(422, "enter some cash or positions")
+    snap = Snapshot(as_of=date.today(), net_liquidation=nav, cash=p.cash, source="lab-custom",
+                    positions=[Position(symbol=s, quantity=0.0, market_value=x.market_value) for s, x in merged.items()])
+    ctx = Context(assets={s: Asset(symbol=s, asset_type=AssetType.ETF if x.sleeve == "core" else AssetType.STOCK,
+                                   sleeve=Sleeve(x.sleeve), exposure_tags=[]) for s, x in merged.items()})
+    return snap, ctx
+
+
+def build_router(settings, client_factory, provider_factory=None) -> APIRouter:
     r = APIRouter(prefix="/api/lab")
     demo_dir: Path = settings.fixtures_dir / "demo_portfolios"
     rules = load_rule_set(settings.fixtures_dir / "rules" / "demo.yaml")
@@ -43,38 +82,62 @@ def build_router(settings, client_factory) -> APIRouter:
         return {p.stem: p for p in sorted(demo_dir.glob("*.json"))}
 
     @r.get("/demo-portfolios")
-    def demo_portfolios():
+    def demo_portfolios(lang: Literal["zh", "en"] = Query("en")):
         out = []
         for pid, path in portfolios().items():
             snap, ctx, meta = load_portfolio(path)
             out.append({
-                "id": pid, "name": meta["name"], "description": meta["description"], "fictional": True,
+                "id": pid, "name": meta.get("name_zh") if lang == "zh" and meta.get("name_zh") else meta["name"],
+                "description": meta.get("description_zh") if lang == "zh" and meta.get("description_zh")
+                else meta["description"], "fictional": True,
                 "price_date": meta["price_date"], "net_liquidation": snap.net_liquidation, "cash": snap.cash,
                 "rule_set": rules.version,
                 "positions": [{"symbol": p.symbol, "name": ctx.asset(p.symbol).name, "market_value": p.market_value,
                                "weight": snap.weight_nav(p.market_value), "sleeve": ctx.asset(p.symbol).sleeve.value}
                               for p in snap.positions],
-                "findings": [v.model_dump(mode="json") for v in evaluate(snap, rules, ctx)],
+                "findings": (translate_findings if lang == "zh" else list)(
+                    [v.model_dump(mode="json") for v in evaluate(snap, rules, ctx)]),
             })
         return out
 
+    memos: dict = {"store": None}  # set below once the memo routes exist
+
     @r.post("/gate")
-    def gate(req: GateRequest):
-        path = portfolios().get(req.portfolio_id)
-        if path is None:
-            raise HTTPException(404, "unknown demo portfolio")
+    def gate(req: GateRequest, lang: Literal["zh", "en"] = Query("en")):
         symbol = req.symbol.upper()
         if not TICKER.match(symbol):
             raise HTTPException(422, "invalid symbol")
-        snap, ctx, _ = load_portfolio(path)
-        if symbol not in ctx.assets:  # unknown names in the demo are treated as satellite stocks
+        if req.portfolio_id == "custom":
+            if req.custom is None:
+                raise HTTPException(422, "custom portfolio is missing")
+            snap, ctx = custom_snapshot(req.custom)
+        else:
+            path = portfolios().get(req.portfolio_id)
+            if path is None:
+                raise HTTPException(404, "unknown demo portfolio")
+            snap, ctx, _ = load_portfolio(path)
+        if symbol not in ctx.assets:  # unknown names are treated as satellite stocks
             ctx.assets[symbol] = Asset(symbol=symbol, asset_type=AssetType.STOCK, sleeve=Sleeve.SATELLITE)
+        memo_note = None
+        if req.memo_id:
+            from .memo_lab import gate_context
+            store = memos["store"]
+            rec = store.get(req.memo_id) if store is not None else None
+            if rec is None:
+                raise HTTPException(404, "memo not found")
+            if rec["ticker"] != symbol:
+                raise HTTPException(422, f"this memo is about {rec['ticker']}, not {symbol}")
+            ctx.memos.pop(symbol, None)  # the visitor's memo replaces any demo memo for this symbol
+            ctx.watchlist.pop(symbol, None)
+            memo_note = gate_context(rec, symbol, ctx)
         try:
             result = evaluate_trade(snap, TradeProposal(symbol=symbol, side=req.side, amount_usd=req.amount_usd,
                                                         attestations=req.attestations), rules, ctx)
         except ValueError as e:
             raise HTTPException(422, str(e))
-        return result.model_dump(mode="json")
+        body = result.model_dump(mode="json")
+        body["memo_status"] = memo_note
+        return translate_gate(body) if lang == "zh" else body
 
     @r.get("/companies")
     def companies():
@@ -133,7 +196,8 @@ def build_router(settings, client_factory) -> APIRouter:
         except Exception:  # segment data is optional; the page still works without it
             segments = []
         body = {"ticker": t, "company": fin.name, "cik": fin.cik, "quarters": quarters, "segments": segments,
-                "note": "Company totals from SEC XBRL filings. Derived values are computed from reported figures."}
+                "note": "公司合计数来自 SEC XBRL 申报文件；推导值由已披露数字计算得出。" if lang == "zh" else
+                "Company totals from SEC XBRL filings. Derived values are computed from reported figures."}
         cache[key] = (time.monotonic(), body)
         return body
 
@@ -145,4 +209,22 @@ def build_router(settings, client_factory) -> APIRouter:
             raise HTTPException(422, "invalid ticker")
         return examples(t, t, lang, settings.fixtures_dir / "example_theses.yaml")
 
+    @r.get("/evals/latest")
+    def evals_latest():
+        """Latest adversarial eval of the AI skeptic (summary and per-case scores, without full answers)."""
+        import json as _json
+        path = settings.fixtures_dir / "evals" / "results" / "latest.json"
+        if not path.exists():
+            raise HTTPException(404, "no eval results yet")
+        report = _json.loads(path.read_text(encoding="utf-8"))
+        report["cases"] = [{k: v for k, v in c.items() if k != "output"} for c in report.get("cases", [])]
+        return report
+
+    from .skeptic import add_skeptic_routes
+    if provider_factory is None:
+        from investment_ai.providers import AnthropicProvider
+        provider_factory = AnthropicProvider
+    sk = add_skeptic_routes(r, settings, client_factory, fetch_lock, provider_factory)
+    from .memo_lab import add_memo_routes
+    memos["store"] = add_memo_routes(r, settings, sk)
     return r

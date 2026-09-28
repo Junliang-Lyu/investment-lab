@@ -78,7 +78,7 @@ def load_portfolio(path: str | Path) -> tuple[Snapshot, Context, dict]:
         positions=[Position.model_validate(p) for p in data.get("positions", [])],
         source=data.get("source", "fixture"),
     )
-    meta = {k: data.get(k) for k in ("id", "name", "description", "price_date", "fictional")}
+    meta = {k: data.get(k) for k in ("id", "name", "description", "name_zh", "description_zh", "price_date", "fictional")}
     return snapshot, context_from_dict(data), meta
 
 

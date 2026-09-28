@@ -51,7 +51,7 @@ class Provider(Protocol):
     name: str
     model: str
 
-    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int) -> LLMResult: ...
+    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int, strict: bool = False) -> LLMResult: ...
 
 
 def _default_post(url: str, headers: dict[str, str], body: bytes, timeout: float) -> bytes:
@@ -82,11 +82,14 @@ class AnthropicProvider:
         self.model = model or os.environ.get("ANTHROPIC_MODEL") or DEFAULT_MODELS["anthropic"]
         self._post, self.temperature = post or _default_post, temperature
 
-    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int) -> LLMResult:
+    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int, strict: bool = False) -> LLMResult:
         body = {
             "model": self.model, "max_tokens": max_tokens, "temperature": self.temperature, "system": system,
             "messages": [{"role": "user", "content": user}],
-            "tools": [{"name": "submit", "description": "Submit the structured result.", "input_schema": schema}],
+            "tools": [{"name": "submit", "description": "Submit the structured result.", "input_schema": schema,
+                       # Strict tool use (grammar-constrained output) is opt-in: with Haiku 4.5 it made 5 of 16
+                       # eval calls run on to max_tokens (2026-09-28, v11 smoke). Code validates the schema anyway.
+                       **({"strict": True} if strict and os.environ.get("ANTHROPIC_STRICT_TOOLS", "0") == "1" else {})}],
             "tool_choice": {"type": "tool", "name": "submit"},
         }
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
@@ -114,7 +117,7 @@ class GeminiProvider:
         self.model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODELS["gemini"]
         self._post, self.temperature = post or _default_post, temperature
 
-    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int) -> LLMResult:
+    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int, strict: bool = False) -> LLMResult:
         prompt = f"{user}\n\nReturn only a JSON object matching this JSON Schema:\n{json.dumps(schema)}"
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -150,8 +153,8 @@ class FakeProvider:
     def __init__(self, responses: list[dict]):
         self.responses, self.calls = list(responses), []
 
-    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int) -> LLMResult:
-        self.calls.append({"system": system, "user": user})
+    def complete_json(self, system: str, user: str, schema: dict, max_tokens: int, strict: bool = False) -> LLMResult:
+        self.calls.append({"system": system, "user": user, "schema": schema, "max_tokens": max_tokens})
         if not self.responses:
             raise LLMError("fake provider has no more responses")
         return LLMResult(provider=self.name, model=self.model, data=self.responses.pop(0),

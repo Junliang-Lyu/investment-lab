@@ -26,8 +26,9 @@ TRANSITIONS: dict[MemoStatus, set[MemoStatus]] = {
     S.IDEA: {S.RESEARCHING, S.ARCHIVED},
     S.RESEARCHING: {S.SKEPTIC_DONE, S.ARCHIVED},
     S.SKEPTIC_DONE: {S.USER_RESPONDED, S.ARCHIVED},
-    S.USER_RESPONDED: {S.REVIEWED, S.ARCHIVED},
-    S.REVIEWED: {S.FINAL, S.USER_RESPONDED, S.ARCHIVED},  # back to §A-§D after review feedback
+    # Back to SKEPTIC_DONE when the user edits §A-§D again and they are incomplete for now (the review is cleared).
+    S.USER_RESPONDED: {S.REVIEWED, S.SKEPTIC_DONE, S.ARCHIVED},
+    S.REVIEWED: {S.FINAL, S.USER_RESPONDED, S.SKEPTIC_DONE, S.ARCHIVED},  # back to §A-§D after review feedback
     S.FINAL: {S.RESEARCHING, S.ARCHIVED},                  # re-open as a new version
     S.ARCHIVED: set(),
 }
@@ -181,7 +182,7 @@ def transition(memo: Memo, to: MemoStatus, actor: Actor, *,
         update["version"] = memo.version + 1
         update["decision"] = None
         update["content"] = memo.content.model_copy(update={"ai_review": None})
-    if to == S.USER_RESPONDED and memo.status == S.REVIEWED:
+    if to in (S.USER_RESPONDED, S.SKEPTIC_DONE) and memo.status in (S.USER_RESPONDED, S.REVIEWED):
         update["content"] = memo.content.model_copy(update={"ai_review": None})
 
     event = MemoEvent(from_status=memo.status, to_status=to, actor=actor,

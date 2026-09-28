@@ -1,8 +1,8 @@
-# Investment Lab 上线手册（第一版：公开 Lab，无数据库、无 LLM）
+# Investment Lab 上线手册
 
 本手册部署 `invest.jun-liang-lyu.com`：财报快照页和交易前闸口页，全部使用虚构组合和 SEC 公开数据。和 self_web 的 `docs/DEPLOYMENT.md` 一样，**所有构建都在本地 Windows 完成，服务器只接收构建好的产物。**
 
-这一版不需要新的 AWS 资源，不连 PostgreSQL，不调用任何 LLM API，也不读取 `private-data/`。
+不需要新的 AWS 资源，不连 PostgreSQL，也不读取 `private-data/`。AI 反方默认关闭，开启步骤见下文。
 
 ## 架构和边界
 
@@ -98,11 +98,48 @@ docker stats --no-stream
 
 self_web `docs/DEPLOYMENT.md` 里原有的检查必须全部仍然通过。然后用手机打开 `/lab/company` 和 `/lab/gate` 看一遍。
 
+## 开启 AI 反方（第二版起）
+
+AI 反方默认关闭。顺序不能反：先在本地跑 eval 并达标，再发布，最后在服务器上打开开关。
+
+1. **本地跑 eval，先小后大**（Windows，在 `investment-lab\\backend`，用本地 `.env` 里的 key）：
+
+   ```powershell
+   # 第一步：8 条最容易出问题的用例，约 $0.4，结果在 fixtures\evals\results\smoke\（不公开）
+   .venv\Scripts\python.exe -m investment_ai eval-skeptic --provider anthropic --smoke --max-usd 0.8
+   # 第二步：冒烟测试的安全项全为 0 且至少 7/8 通过，才跑完整 32 条（约 $1.5–2）
+   .venv\Scripts\python.exe -m investment_ai eval-skeptic --provider anthropic --max-usd 2.5
+   # 第三步：memo 工作流的 AI 审查，10 条，约 $0.1–0.2，结果在 fixtures\evals\results\review\
+   .venv\Scripts\python.exe -m investment_ai eval-memo-review --provider anthropic --max-usd 0.5
+   # 任何一步打印 INCOMPLETE（返回码 4），用同样的参数加 --resume 继续
+   ```
+
+   memo 工作流（DESIGN §11.5）和 AI 反方用同一个开关：反方开启时，memo 的保存、审查、定稿接口也一起开启。审查 eval 的放行标准：显示出来的审查中建议为 0、注入暗号为 0、宽松判定为 0（把空回应、"同意"或回避的回答判为驳倒或接受风险），通过率 ≥ 90%。
+
+   `--max-usd` 是这次运行的花费上限（包括续跑前已花的部分），到了就不再开始新用例。完整运行结束时打印 `PASSED` 或 `FAILED`，结果写入 `fixtures\evals\results\latest.json`（会随发布包进入镜像并在页面公开）。`FAILED` 就停下，不要开启。
+   以后根据反馈修改 prompt 或校验规则时：先用已有的调用记录离线重放（不花钱），再用 `--only <用例>` 或 `--smoke` 验证，发布前才跑完整 32 条。
+2. **发布**：照常运行 `build-release.ps1` 并按上文切换版本。
+3. **服务器环境变量**（`.env.production`，模板见 `deploy/invest.env.example`）：
+
+   ```sh
+   INVEST_ANTHROPIC_API_KEY=<单独给 Lab 用的 key>
+   LAB_SKEPTIC_ENABLED=1
+   LAB_DAILY_BUDGET_USD=0.5
+   LLM_MONTHLY_BUDGET_USD=5
+   LAB_SKEPTIC_PER_IP_DAILY=3
+   ```
+
+   然后 `dc up -d investment-api`，再跑 `check-release.sh`，应看到 `AI skeptic status: ENABLED`。
+   服务器和本地各有自己的花费记录，但扣的是同一个 Anthropic 账户。最可靠的兜底是在 Anthropic 控制台给账户设每月用量上限。
+4. **紧急关闭**：把 `LAB_SKEPTIC_ENABLED` 改成 `0` 后 `dc up -d investment-api`。页面会显示"尚未开启"，其他功能不受影响。
+5. 访客输入保存在命名卷 `invest_lab_data` 中 30 天后自动删除；花费记录不含访客数据。
+6. memo 工作流（DESIGN §11.5）和 AI 反方同一个开关。访客的 memo 也在 `invest_lab_data`（`lab.sqlite3` 的 `memos` 表），最后修改 180 天后自动删除。**这个卷现在有访客数据，不要随手删除**；需要备份时在服务器上 `docker run --rm -v invest_lab_data:/d -v "$PWD":/b alpine tar czf /b/lab-data.tgz -C /d .`。
+
 ## 回滚和下线
 
 - 回滚：`ln -sfn /opt/investment/releases/<上一个ID> /opt/investment/current`，把 `INVEST_API_IMAGE` 改回上一个镜像，`dc up -d`。
 - 暂时下线 Lab（主站不受影响）：`dc rm -sf investment-api`，然后不带 override 启动：`docker compose --env-file .env.production -f compose.yaml up -d`。Caddy 找不到 `invest.caddy`，子域名就不再提供服务。
-- 没有数据库，没有需要备份的数据；SEC 缓存卷 `invest_edgar_cache` 删掉后会自动重新下载。
+- 没有 PostgreSQL。开启 AI 反方后，`invest_lab_data` 卷里有访客的 memo（见上文第 6 条），回滚镜像不影响它；SEC 缓存卷 `invest_edgar_cache` 删掉后会自动重新下载。
 
 ## 以后（不在这一版）
 

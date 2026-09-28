@@ -33,6 +33,26 @@ echo "$b" | grep -q '"overall":"rule_breaks"' && pass "gate POST" || bad "gate P
 
 c=$(code "$LAB/api/lab/companies/IBKR/snapshot"); [ "$c" = 404 ] && pass "non-curated ticker rejected" || bad "non-curated ticker rejected" "got $c"
 
+b=$(curl -s --max-time 30 -X POST -H 'Content-Type: application/json' --data "$body" "$LAB/api/lab/gate?lang=zh")
+echo "$b" | grep -q '仓位与集中度' && pass "gate in Chinese" || bad "gate in Chinese" "$(echo "$b" | head -c 150)"
+c=$(code "$LAB/lab/skeptic"); [ "$c" = 200 ] && pass "/lab/skeptic page" || bad "/lab/skeptic page" "got $c"
+
+# AI skeptic: report its state; it must be off unless the operator enabled it after the eval passed.
+b=$(curl -s --max-time 30 "$LAB/api/lab/skeptic/status")
+if echo "$b" | grep -q '"enabled":true'; then
+  pass "AI skeptic status: ENABLED ($b)"
+  c=$(code -X POST -H 'Content-Type: application/json' --data '{"ticker":"GOOG","thesis":"short"}' "$LAB/api/lab/skeptic")
+  [ "$c" = 422 ] && pass "skeptic rejects too-short thesis" || bad "skeptic rejects too-short thesis" "got $c"
+elif echo "$b" | grep -q '"enabled":false'; then
+  pass "AI skeptic status: disabled"
+else
+  bad "AI skeptic status" "$(echo "$b" | head -c 150)"
+fi
+# Memo workflow: SPA route served; an unknown memo id is 404 (enabled) or 503 (skeptic off); a memo needs a skeptic result.
+c=$(code "$LAB/lab/memo/AAAAAAAAAAAAAAAAAAAAAA"); [ "$c" = 200 ] && pass "/lab/memo/<id> page" || bad "/lab/memo/<id> page" "got $c"
+c=$(code "$LAB/api/lab/memos/AAAAAAAAAAAAAAAAAAAAAA"); { [ "$c" = 404 ] || [ "$c" = 503 ]; } && pass "unknown memo ($c)" || bad "unknown memo" "got $c"
+c=$(code "$LAB/api/lab/evals/latest"); { [ "$c" = 200 ] || [ "$c" = 404 ]; } && pass "eval results endpoint ($c)" || bad "eval results endpoint" "got $c"
+
 # The main site must be unaffected.
 c=$(code "https://${DOMAIN}/en/"); [ "$c" = 200 ] && pass "main site /en/" || bad "main site /en/" "got $c"
 c=$(code "https://${DOMAIN}/api/health"); [ "$c" = 200 ] && pass "main site /api/health" || bad "main site /api/health" "got $c"
