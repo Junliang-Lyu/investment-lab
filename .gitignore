@@ -1,0 +1,24 @@
+# Private data — never commit
+private-data/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Deploy artifacts
+deploy/release/
+*.dump
+
+# Public data cache (SEC responses)
+data-cache/

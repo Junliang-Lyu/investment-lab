@@ -1,0 +1,10 @@
+# Runtime dependencies of the public Lab API image (pinned; versions tested with backend/tests).
+fastapi==0.141.1
+starlette==1.7.0
+uvicorn==0.54.0
+pydantic==2.13.5
+pydantic_core==2.46.5
+PyYAML==6.0.3
+anyio==4.15.1
+h11==0.16.0
+click==8.5.0

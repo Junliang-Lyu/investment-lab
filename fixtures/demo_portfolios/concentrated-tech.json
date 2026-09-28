@@ -1,0 +1,27 @@
+{
+  "id": "concentrated-tech",
+  "name": "Concentrated Tech",
+  "description": "Fictional portfolio: two large tech stocks and a lot of cash, no memos, review overdue. Shows single-stock, theme and memo rules.",
+  "fictional": true,
+  "price_date": "2026-09-25",
+  "as_of": "2026-09-25",
+  "net_liquidation": 10000,
+  "cash": 5000,
+  "last_review_date": "2026-06-01",
+  "positions": [
+    {"symbol": "NVDA", "quantity": 14.0, "market_value": 2500},
+    {"symbol": "MSFT", "quantity": 5.0, "market_value": 2500}
+  ],
+  "assets": [
+    {"symbol": "NVDA", "name": "NVIDIA", "asset_type": "stock", "sleeve": "satellite", "exposure_tags": ["us_megacap_tech", "semiconductors"]},
+    {"symbol": "MSFT", "name": "Microsoft", "asset_type": "stock", "sleeve": "satellite", "exposure_tags": ["us_megacap_tech"]},
+    {"symbol": "AMZN", "name": "Amazon", "asset_type": "stock", "sleeve": "satellite", "exposure_tags": ["us_megacap_tech"]},
+    {"symbol": "VOO", "name": "Vanguard S&P 500 ETF", "asset_type": "etf", "sleeve": "core", "exposure_tags": ["us_large_cap"]}
+  ],
+  "memos": [
+    {"symbol": "AMZN", "status": "final", "decision": "eligible_for_gate", "invalidation_count": 3}
+  ],
+  "watchlist": [
+    {"symbol": "AMZN", "mode": "paper", "started_at": "2026-06-20", "review_count": 2}
+  ]
+}

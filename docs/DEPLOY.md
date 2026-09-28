@@ -1,0 +1,109 @@
+# Investment Lab 上线手册（第一版：公开 Lab，无数据库、无 LLM）
+
+本手册部署 `invest.jun-liang-lyu.com`：财报快照页和交易前闸口页，全部使用虚构组合和 SEC 公开数据。和 self_web 的 `docs/DEPLOYMENT.md` 一样，**所有构建都在本地 Windows 完成，服务器只接收构建好的产物。**
+
+这一版不需要新的 AWS 资源，不连 PostgreSQL，不调用任何 LLM API，也不读取 `private-data/`。
+
+## 架构和边界
+
+- Caddy（self_web 已有）新增一个 site block：`invest.{$DOMAIN}`。静态页面来自 `/srv/invest`，`/api/*` 转发到 `investment-api:8081`，`/api/docs` 和 `/api/openapi.json` 返回 404。
+- `investment-api` 容器：不对主机开放端口；只在自己的 `invest` 网络上（和 Caddy 共享，可以访问外网取 SEC 数据）；不在 self_web 的 `backend` 内部网络上，所以访问不到 PostgreSQL；只读根文件系统、非 root 用户、去掉全部 capabilities、内存上限 256M。
+- 镜像只包含公开代码和演示用 fixture（`fixtures/rules/demo.yaml`、三个虚构组合、示例论点），由 `backend/tests/test_deploy.py` 和发布脚本里的镜像检查保证。
+- 实测：10 家公司的快照首次加载 3–4 秒，之后 6 小时内走内存缓存（约 20 ms）；单进程峰值内存约 104 MB；SEC 缓存卷约 150 MB。冷加载串行执行，避免并发时超出内存上限。
+- SEC 暂时不可用时：有旧快照就返回旧快照，没有就返回 503 和说明文字，不会出现 500。
+
+## 一次性准备（需要本人操作）
+
+1. **DNS**：在域名的 DNS 服务商处添加 A 记录：主机名 `invest`，值为 Lightsail 实例的静态 IPv4（和主站同一个 IP）。生效后 `nslookup invest.jun-liang-lyu.com` 能查到这个 IP。
+2. **Docker Desktop**：Windows 上安装并启动，用于本地构建镜像。
+3. **self_web 的 Caddyfile**：仓库里已经在末尾加了 `import /etc/caddy/sites/*.caddy`。服务器上的 `/opt/portfolio/current/deploy/Caddyfile` 需要同样加上（或者做一次 self_web 发布）。没有 Lab 时这一行只会记一条 warning，不影响主站。
+4. **服务器目录**：
+
+   ```sh
+   sudo install -d -m 0755 /opt/investment/releases
+   sudo chown -R "$USER":"$USER" /opt/investment
+   ```
+
+5. **服务器环境变量**：在 `/opt/portfolio/current/deploy/.env.production` 末尾追加（模板见 `deploy/invest.env.example`；不要把真实值提交到仓库或发到聊天里）：
+
+   ```sh
+   INVEST_API_IMAGE=investment-api:<RELEASE_ID>
+   SEC_USER_AGENT=Your Name your-email@example.com
+   INVEST_RATE_PER_MINUTE=60
+   ```
+
+6. **命令别名**（避免以后只用 `compose.yaml` 启动时把 Lab 漏掉）：在服务器的 `~/.bashrc` 加
+
+   ```sh
+   alias dc='docker compose --env-file .env.production -f compose.yaml -f /opt/investment/current/compose.invest.yaml'
+   ```
+
+   之后在 `/opt/portfolio/current/deploy` 里用 `dc ps`、`dc up -d`、`dc logs -f investment-api`。
+   别名只在交互式登录的 shell 里有效；从本地用 `ssh host '命令'` 远程执行时不会加载，要写完整命令：
+   `docker compose --env-file .env.production -f compose.yaml -f /opt/investment/current/compose.invest.yaml ...`
+
+## 每次发布
+
+**1. 本地构建（Windows PowerShell，在 `investment-lab` 目录）**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\build-release.ps1
+```
+
+脚本依次执行：后端测试、`npm ci` + 前端构建、`docker build`、镜像内容检查（不能有 `private-data`、`.env`、非 demo 规则文件）、打包到 `deploy\release\<RELEASE_ID>\`（`site\`、`invest.caddy`、`compose.invest.yaml`、`investment-api-<RELEASE_ID>.tar`）。`deploy/release/` 已被 git 忽略。
+
+**2. 上传**
+
+```powershell
+scp -r deploy\release\<RELEASE_ID> ubuntu@<SERVER_IP>:/opt/investment/releases/
+```
+
+**3. 服务器上切换**
+
+```sh
+cd /opt/investment/releases/<RELEASE_ID>
+docker load -i investment-api-<RELEASE_ID>.tar && rm investment-api-<RELEASE_ID>.tar
+ln -sfn /opt/investment/releases/<RELEASE_ID> /opt/investment/current
+cd /opt/portfolio/current/deploy
+nano .env.production            # 把 INVEST_API_IMAGE 改成新的 <RELEASE_ID>
+dc config > /dev/null && dc up -d
+dc ps
+dc logs --tail=50 caddy investment-api
+```
+
+Caddy 会自动为 `invest.` 子域名申请证书（DNS 已生效、80/443 可达时）。
+
+## 发布检查
+
+**推荐：在服务器上运行检查脚本**（逐项打印 PASS/FAIL，不经过本地 PowerShell 的引号转义）：
+
+```sh
+scp deploy/check-release.sh ubuntu@<SERVER_IP>:/opt/investment/current/   # 在本地执行（以后的发布包会自带）
+bash /opt/investment/current/check-release.sh                              # 在服务器上执行
+```
+
+证书刚开始申请时 HTTPS 检查可能失败，等一两分钟再跑一次。下面是脚本里各项检查对应的手动命令，供排查用：
+
+```sh
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://invest.jun-liang-lyu.com/     # 308 .../lab
+curl --fail https://invest.jun-liang-lyu.com/lab > /dev/null && echo page ok
+curl --fail https://invest.jun-liang-lyu.com/api/health                                          # {"status":"ok"}
+curl --fail -s https://invest.jun-liang-lyu.com/api/lab/companies/GOOG/snapshot | head -c 120; echo
+curl -s -o /dev/null -w '%{http_code}\n' https://invest.jun-liang-lyu.com/api/docs              # 404
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"portfolio_id":"concentrated-tech","symbol":"AMZN","side":"buy","amount_usd":800}' \
+  https://invest.jun-liang-lyu.com/api/lab/gate | head -c 120; echo                              # "overall":"rule_breaks"
+docker stats --no-stream
+```
+
+self_web `docs/DEPLOYMENT.md` 里原有的检查必须全部仍然通过。然后用手机打开 `/lab/company` 和 `/lab/gate` 看一遍。
+
+## 回滚和下线
+
+- 回滚：`ln -sfn /opt/investment/releases/<上一个ID> /opt/investment/current`，把 `INVEST_API_IMAGE` 改回上一个镜像，`dc up -d`。
+- 暂时下线 Lab（主站不受影响）：`dc rm -sf investment-api`，然后不带 override 启动：`docker compose --env-file .env.production -f compose.yaml up -d`。Caddy 找不到 `invest.caddy`，子域名就不再提供服务。
+- 没有数据库，没有需要备份的数据；SEC 缓存卷 `invest_edgar_cache` 删掉后会自动重新下载。
+
+## 以后（不在这一版）
+
+私有 dashboard、LLM 反方的公开版本（每 IP 限流、日/月预算、30 天清理）上线时才需要数据库和密钥，方案见 DESIGN §14.2。上线 LLM 之前先完成 ≥ 30 条的 eval 集。

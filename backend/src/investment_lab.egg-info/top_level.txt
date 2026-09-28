@@ -1,0 +1,4 @@
+investment_ai
+investment_api
+investment_core
+investment_data

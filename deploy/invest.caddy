@@ -1,0 +1,47 @@
+# Investment Lab site block. Mounted into the self_web Caddy container at
+# /etc/caddy/sites/invest.caddy and loaded by `import /etc/caddy/sites/*.caddy`.
+invest.{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# API docs stay off in production (API_DOCS unset); block the paths anyway.
+	handle /api/docs* {
+		respond 404
+	}
+	handle /api/openapi.json {
+		respond 404
+	}
+	handle /api/* {
+		reverse_proxy investment-api:8081
+	}
+
+	# Hashed build assets can be cached for a year.
+	handle /assets/* {
+		root * /srv/invest
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# `*` is required: without it Caddy reads "/lab" as a path matcher, not the target.
+	handle / {
+		redir * /lab 308
+	}
+
+	# Single-page app: every other path serves index.html.
+	handle {
+		root * /srv/invest
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

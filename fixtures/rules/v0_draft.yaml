@@ -1,0 +1,22 @@
+# v0 draft rules, imported from personal_investment_system_v0/个人投资规则_v0.md.
+# Values are drafts: no position plan has been settled yet (small positions for now).
+# In private mode everything runs as warn/info only; no rule produces "break".
+version: v0-draft
+status: draft
+notes: Draft values from v0 (2026-06). Revisit after studying other allocation approaches.
+rules:
+  - {code: CORE_TARGET_WEIGHT,         severity: info, params: {target: 0.70}}
+  - {code: SATELLITE_MAX_WEIGHT,       severity: warn, params: {max: 0.30}}
+  - {code: SINGLE_MAX_WEIGHT_NAV,      severity: warn, params: {max: 0.15}}
+  - {code: MEMO_REQUIRED_ABOVE,        severity: warn, params: {threshold: 0.10, min_status: reviewed}}
+  - {code: EXPOSURE_MAX_WEIGHT,        severity: warn, params: {max: 0.35, count_core: false}}
+  - {code: SINGLE_MAX_WEIGHT_INVESTED, severity: warn, params: {max: 0.50}}
+  - {code: TOP3_MAX_WEIGHT_INVESTED,   severity: warn, params: {max: 0.90, count_core: false}}
+  - {code: LOSS_REVIEW_TRIGGER,        severity: info, params: {loss_usd: 600}}
+  - {code: FIRST_LIVE_MAX_USD,         severity: warn, params: {max_usd: 1000}}
+  - {code: PAPER_MIN_WEEKS,            severity: warn, params: {weeks: 6}}
+  - {code: PAPER_MIN_REVIEWS,          severity: warn, params: {reviews: 2}}
+  - {code: REVIEW_OVERDUE,             severity: warn, params: {max_days: 31}}
+  - {code: UNCLASSIFIED_POSITION,      severity: warn}
+  - {code: MISSING_INVALIDATION,       severity: warn, params: {min_conditions: 3}}
+  - {code: UNCHECKED_TRADE,            severity: warn, params: {window_days: 7, include_core: false}}

@@ -1,0 +1,2 @@
+[console_scripts]
+investment-core = investment_core.cli:main

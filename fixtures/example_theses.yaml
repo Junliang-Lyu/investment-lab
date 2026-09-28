@@ -1,0 +1,35 @@
+# Example one-line theses for people who have no view yet (Lab, and testing).
+# Each is a starting point to be argued with, not a recommendation. {company} is replaced with the company name.
+generic:
+  - id: growth-durable
+    angle: growth
+    zh: "{company} 的收入增长能在未来两年保持两位数。"
+    en: "{company} can keep double-digit revenue growth for the next two years."
+  - id: capex-pays-off
+    angle: investment
+    zh: "{company} 当前的高资本开支会在三年内转化为利润增长。"
+    en: "{company}'s current heavy capital spending will turn into profit growth within three years."
+  - id: margins-peaked
+    angle: skeptical
+    zh: "{company} 的利润率已经接近高点，未来增长会放缓。"
+    en: "{company}'s margins are near their peak and growth will slow."
+  - id: cash-cushion
+    angle: balance-sheet
+    zh: "{company} 的现金和低负债足以支撑它度过一段现金流为负的投入期。"
+    en: "{company}'s cash and low debt can carry it through a period of negative free cash flow."
+by_ticker:
+  GOOG:
+    - id: cloud-offsets-capex
+      angle: investment
+      zh: "云业务增长能抵消 AI 资本开支上升带来的利润压力。"
+      en: "Cloud growth can offset the profit pressure from rising AI capital spending."
+  TSLA:
+    - id: autonomy-optionality
+      angle: growth
+      zh: "汽车业务利润下滑时，自动驾驶和储能能撑起公司的增长。"
+      en: "Autonomy and energy storage can carry growth while the car business's margins fall."
+  MU:
+    - id: memory-cycle
+      angle: skeptical
+      zh: "这一轮存储周期的高利润率不可持续，会像以往周期一样回落。"
+      en: "This memory cycle's record margins are not sustainable and will fall back like past cycles."

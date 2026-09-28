@@ -1,0 +1,9 @@
+# Build context is the repo root; send only what deploy/api.Dockerfile copies.
+*
+!deploy/requirements-api.txt
+!backend/src/**
+!fixtures/rules/demo.yaml
+!fixtures/demo_portfolios/**
+!fixtures/example_theses.yaml
+**/__pycache__
+**/*.pyc

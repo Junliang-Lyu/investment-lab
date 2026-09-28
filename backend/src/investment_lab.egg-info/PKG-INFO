@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: investment-lab
+Version: 0.1.0
+Summary: Personal investment discipline system: rule engine, pre-trade gate, memo workflow.
+Requires-Python: >=3.10
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: api
+Requires-Dist: fastapi>=0.110; extra == "api"
+Requires-Dist: uvicorn[standard]>=0.29; extra == "api"
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-cov>=5; extra == "dev"
+Requires-Dist: fastapi>=0.110; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"

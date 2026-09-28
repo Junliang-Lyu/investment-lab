@@ -1,0 +1,46 @@
+# Compose override that adds the Investment Lab to the self_web stack.
+# Lab releases live in their own directory (default /opt/investment/current), so
+# self_web releases and Lab releases can be updated and rolled back separately.
+# Run from self_web's deploy directory:
+#   docker compose --env-file .env.production -f compose.yaml \
+#     -f /opt/investment/current/compose.invest.yaml up -d
+#
+# Boundaries: investment-api publishes no host port and is not on self_web's
+# internal `backend` network (no access to PostgreSQL). It sits on its own
+# `invest` network, shared only with Caddy, which also gives it outbound HTTPS
+# to sec.gov.
+services:
+  caddy:
+    volumes:
+      - ${INVEST_DIR:-/opt/investment/current}/invest.caddy:/etc/caddy/sites/invest.caddy:ro
+      - ${INVEST_DIR:-/opt/investment/current}/site:/srv/invest:ro
+    networks:
+      - invest
+
+  investment-api:
+    image: ${INVEST_API_IMAGE:?Set INVEST_API_IMAGE to the prebuilt investment-api image tag}
+    restart: unless-stopped
+    environment:
+      SEC_USER_AGENT: ${SEC_USER_AGENT:?Set SEC_USER_AGENT to "Name email" as SEC requires}
+      RATE_PER_MINUTE: ${INVEST_RATE_PER_MINUTE:-60}
+    volumes:
+      - invest_edgar_cache:/data/edgar
+    networks:
+      - invest
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  invest: {}
+
+volumes:
+  invest_edgar_cache: {}

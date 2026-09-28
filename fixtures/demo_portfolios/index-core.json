@@ -1,0 +1,26 @@
+{
+  "id": "index-core",
+  "name": "Index Core",
+  "description": "Fictional portfolio: mostly broad index funds. Try adding a single stock and see what the pre-trade gate checks.",
+  "fictional": true,
+  "price_date": "2026-09-25",
+  "as_of": "2026-09-25",
+  "net_liquidation": 10000,
+  "cash": 1000,
+  "last_review_date": "2026-09-15",
+  "positions": [
+    {"symbol": "VOO", "quantity": 12.5, "market_value": 7000},
+    {"symbol": "BND", "quantity": 13.7, "market_value": 1000},
+    {"symbol": "VXUS", "quantity": 14.5, "market_value": 1000}
+  ],
+  "assets": [
+    {"symbol": "VOO", "name": "Vanguard S&P 500 ETF", "asset_type": "etf", "sleeve": "core", "exposure_tags": ["us_large_cap"]},
+    {"symbol": "BND", "name": "Vanguard Total Bond Market ETF", "asset_type": "etf", "sleeve": "core", "exposure_tags": ["us_bonds"]},
+    {"symbol": "VXUS", "name": "Vanguard Total International Stock ETF", "asset_type": "etf", "sleeve": "satellite", "exposure_tags": ["international_equity"]},
+    {"symbol": "MSFT", "name": "Microsoft", "asset_type": "stock", "sleeve": "satellite", "exposure_tags": ["us_megacap_tech"]}
+  ],
+  "memos": [
+    {"symbol": "VXUS", "status": "final", "decision": "eligible_for_gate", "invalidation_count": 3}
+  ],
+  "watchlist": []
+}

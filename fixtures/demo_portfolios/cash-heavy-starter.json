@@ -1,0 +1,26 @@
+{
+  "id": "cash-heavy-starter",
+  "name": "Cash-Heavy Starter",
+  "description": "Fictional portfolio: mostly cash and one stock. Try opening a new position on the watchlist and see the paper-to-live checks.",
+  "fictional": true,
+  "price_date": "2026-09-25",
+  "as_of": "2026-09-25",
+  "net_liquidation": 10000,
+  "cash": 9000,
+  "last_review_date": "2026-09-20",
+  "positions": [
+    {"symbol": "COST", "quantity": 1.1, "market_value": 1000}
+  ],
+  "assets": [
+    {"symbol": "COST", "name": "Costco", "asset_type": "stock", "sleeve": "satellite", "exposure_tags": ["us_consumer_staples"]},
+    {"symbol": "V", "name": "Visa", "asset_type": "stock", "sleeve": "satellite", "exposure_tags": ["us_payments"]},
+    {"symbol": "VOO", "name": "Vanguard S&P 500 ETF", "asset_type": "etf", "sleeve": "core", "exposure_tags": ["us_large_cap"]}
+  ],
+  "memos": [
+    {"symbol": "COST", "status": "final", "decision": "eligible_for_gate", "invalidation_count": 3},
+    {"symbol": "V", "status": "user_responded", "invalidation_count": 3}
+  ],
+  "watchlist": [
+    {"symbol": "V", "mode": "watch", "started_at": "2026-09-01", "review_count": 1}
+  ]
+}
