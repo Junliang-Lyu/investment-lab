@@ -160,3 +160,46 @@ def test_empty_response_blocks_finalize(pack):
     with pytest.raises(TransitionError) as e:
         finalize(pm, MemoDecision.WATCHLIST, review_passed=True, reason=None)
     assert any("§B" in x for x in e.value.missing)
+
+
+def test_review_output_repairs(pack):
+    """Tool-use slips seen with Haiku: fields written as markup inside a string, objects as JSON strings."""
+    import json as _json
+    from investment_ai.memo_review import review_schema, validate_review
+    pm = parse_memo(filled_memo(pack))
+    good = review_json()
+    slipped = {k: good[k] for k in ("section_a", "responses")}
+    slipped["fact_vs_inference"] = (good["fact_vs_inference"] + "</fact_vs_inference>\n"
+                                    f'<parameter name="section_c">{_json.dumps(good["section_c"], ensure_ascii=False)}\n'
+                                    f'<parameter name="section_d">{_json.dumps(good["section_d"], ensure_ascii=False)}\n'
+                                    f'<parameter name="summary">{good["summary"]}')
+    review, report = validate_review(slipped, pm, pack[1])
+    assert report.ok and review.section_c.verdict == "clear" and review.summary == good["summary"]
+    assert review.fact_vs_inference == good["fact_vs_inference"]
+    as_strings = {**good, "section_a": _json.dumps(good["section_a"]), "responses": _json.dumps(good["responses"])}
+    assert validate_review(as_strings, pm, pack[1])[1].ok
+    assert "$defs" not in _json.dumps(review_schema())
+
+
+def test_review_flat_shape_text_block_and_numbers(pack):
+    from investment_ai.memo_review import review_schema, validate_review
+    pm = parse_memo(filled_memo(pack))
+    g = review_json()
+    flat = {"section_a_verdict": "pass", "section_a_issues": [], "responses": g["responses"],
+            "fact_vs_inference": g["fact_vs_inference"], "section_c_verdict": "needs_revision",
+            "section_c_issues": ["Say which margin, e.g. operating margin below 25%, not 30%."],
+            "section_d_verdict": "ok", "section_d_comment": "2026-10-29 is after the next earnings report.",
+            "summary": "OK."}
+    review, report = validate_review(flat, pm, pack[1])
+    assert report.ok and review.section_c.verdict == "needs_revision" and review.section_d.verdict == "ok"
+    assert set(review_schema()["properties"]) >= {"section_a_verdict", "responses", "summary"}
+    # Fields the model wrote in a text block after the tool input are recovered.
+    only_a = {k: flat[k] for k in ("section_a_verdict", "section_a_issues")}
+    text = "".join(f'<parameter name="{k}">{json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v}\n'
+                   for k, v in flat.items() if k not in only_a)
+    assert validate_review(only_a, pm, pack[1], text)[1].ok
+    # An unsupported figure stated as a fact is still rejected; a suggested threshold is not.
+    bad = {**flat, "summary": "Cloud margin is 57.3% this quarter."}
+    assert "57.3%" in validate_review(bad, pm, pack[1])[1].ungrounded
+    ok = {**flat, "summary": "A clearer condition would be, for example, cloud margin below 20%."}
+    assert validate_review(ok, pm, pack[1])[1].ok

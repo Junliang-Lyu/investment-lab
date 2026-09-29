@@ -8,6 +8,7 @@ conditions) and the position check, which runs the rule engine's pre-trade gate.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Literal
@@ -22,9 +23,11 @@ from .ledger import AIRun, BudgetExceeded, Ledger
 from .memo_parse import ParsedMemo
 from .providers import LLMError, Provider, prices_for
 from .research import LANGUAGES, PROMPTS_DIR
-from .validate import extract_numbers, forbidden_hits, is_literal, matches_item, thesis_markers
+from .validate import (_fix_cjk_quotes, _operands_from_mentions, _split_embedded_params, derivation, extract_numbers,
+                       forbidden_hits, is_literal, matches_item, named_matches, params_from_text, strict_schema,
+                       thesis_markers)
 
-PROMPT_VERSION = "memo_user_review_v1"
+PROMPT_VERSION = "memo_user_review_v2"
 UNRESOLVED = {"not_refuted", "off_topic"}
 
 
@@ -134,7 +137,69 @@ def _texts(r: MemoReview) -> list[str]:
     return t
 
 
-def validate_review(raw: dict, pm: ParsedMemo, pack: EvidencePack | None) -> tuple[MemoReview | None, ReviewReport]:
+class FlatReview(BaseModel):
+    """What the model fills in: top-level strings and lists only. With nested top-level objects Haiku (without
+    strict tool use) often returned only the first one (2026-09-29, all 3 eval cases); the skeptic's flat shape
+    works. Converted to MemoReview in code."""
+    section_a_verdict: Literal["pass", "issues"]
+    section_a_issues: list[str] = Field(default_factory=list)
+    responses: list[ResponseVerdict] = Field(min_length=3, max_length=3)
+    fact_vs_inference: str
+    section_c_verdict: Literal["clear", "needs_revision"]
+    section_c_issues: list[str] = Field(default_factory=list)
+    section_d_verdict: Literal["ok", "needs_detail"]
+    section_d_comment: str = ""
+    summary: str
+
+
+FLAT_FIELDS = tuple(FlatReview.model_fields)
+NESTED_FIELDS = ("section_a", "responses", "fact_vs_inference", "section_c", "section_d", "summary")
+
+
+def _load_json(v):
+    if isinstance(v, str) and v.strip()[:1] in "[{":
+        for text in (v, _fix_cjk_quotes(v)):
+            try:
+                return json.loads(text)
+            except ValueError:
+                continue
+    return v
+
+
+def repair_review(raw: dict, text: str = "") -> dict:
+    """Undo the tool-use slips seen with Haiku (as with the skeptic): fields written as markup inside a string or
+    in a text block, lists or objects returned as JSON strings. Returns the nested MemoReview shape."""
+    if not isinstance(raw, dict):
+        return raw
+    fields = FLAT_FIELDS + NESTED_FIELDS
+    out = params_from_text(text, _split_embedded_params(dict(raw), fields), fields)
+    out = {k: _load_json(v) for k, v in out.items()}
+    if "section_a_verdict" in out or "section_c_verdict" in out:  # flat shape from the model
+        nested = {k: out[k] for k in ("responses", "fact_vs_inference", "summary") if k in out}
+        if "section_a_verdict" in out:
+            nested["section_a"] = {"verdict": out["section_a_verdict"], "issues": out.get("section_a_issues") or []}
+        if "section_c_verdict" in out:
+            nested["section_c"] = {"verdict": out["section_c_verdict"], "issues": out.get("section_c_issues") or []}
+        if "section_d_verdict" in out:
+            nested["section_d"] = {"verdict": out["section_d_verdict"], "comment": out.get("section_d_comment") or ""}
+        return nested
+    return out
+
+
+def review_schema() -> dict:
+    return strict_schema(FlatReview)  # refs inlined, flat: see FlatReview
+
+
+# Numbers a reviewer may write without evidence: suggested thresholds and examples ("e.g. 60%+", "below 25%",
+# "例如低于 30%"). They describe what the user could write, not facts about the company.
+_HYPOTHETICAL = re.compile(r"(?:e\.g\.|for example|such as|say|like|below|above|under|over|at least|at most|less than|"
+                           r"more than|threshold|floor|ceiling|target|>|<|≥|≤|例如|比如|如|低于|高于|超过|不足|少于|"
+                           r"多于|阈值|门槛|至少|至多|以下|以上)\W{0,3}(?:\S{0,10}\s?){0,3}$", re.I)
+
+
+def validate_review(raw: dict, pm: ParsedMemo, pack: EvidencePack | None,
+                    text: str = "") -> tuple[MemoReview | None, ReviewReport]:
+    raw = repair_review(raw, text)
     try:
         review = MemoReview.model_validate(raw)
     except ValidationError as e:
@@ -143,13 +208,29 @@ def validate_review(raw: dict, pm: ParsedMemo, pack: EvidencePack | None) -> tup
         return None, ReviewReport(ok=False, errors=["responses must be E1, E2, E3 in order"])
     memo_numbers = extract_numbers(memo_text(pm))
     forbidden, ungrounded = [], []
-    for text in _texts(review):
-        forbidden += forbidden_hits(text)
-        for n in extract_numbers(text):
-            in_memo = any(n.kind == m.kind and abs(n.value - m.value) <= max(n.tolerance, m.tolerance) for m in memo_numbers)
-            in_pack = pack is not None and (is_literal(n, pack) or any(matches_item(n, i) for i in pack.items if n.kind == "usd"))
-            if not (in_memo or in_pack):
-                ungrounded.append(n.text)
+    def grounded(n, t: str) -> bool:
+        in_memo = any(n.kind == m.kind and abs(n.value - m.value) <= max(n.tolerance, m.tolerance) for m in memo_numbers)
+        return in_memo or (pack is not None and (
+            is_literal(n, pack) or any(matches_item(n, i) for i in pack.items if n.kind == "usd")
+            or bool(named_matches(n, pack, t))))
+
+    proposals = set(review.section_c.issues)  # §C feedback proposes thresholds (like the skeptic's suggestions)
+    for t in _texts(review):
+        forbidden += forbidden_hits(t)
+        if t in proposals:
+            continue
+        nums = extract_numbers(t)
+        for n in nums:
+            if grounded(n, t):
+                continue
+            digits = re.search(r"\d[\d,]*(?:\.\d+)?", n.text)
+            at = t.find(digits.group(0)) if digits else -1
+            if at >= 0 and _HYPOTHETICAL.search(t[max(0, at - 40):at]):
+                continue  # a suggested threshold or example, not a claim about the company
+            pool = _operands_from_mentions([m for m in nums if m is not n and grounded(m, t)])
+            if derivation(n, pool):
+                continue  # e.g. "$16.62B of $27.46B (60.5%)"
+            ungrounded.append(n.text)
     user_text = " ".join([pm.one_liner, *pm.reasons, *pm.responses.values(), *pm.invalidation_raw, pm.review_focus])
     joined = " ".join(_texts(review)).lower()
     echoed = [m for m in thesis_markers(user_text, pack) if m.lower() in joined]
@@ -190,15 +271,16 @@ def _system(language: str) -> str:
 
 
 def _user(pm: ParsedMemo, pack: EvidencePack | None, language: str) -> str:
+    from datetime import date
     ev = f"\n\nEVIDENCE:\n{pack.to_prompt_table(language)}" if pack else ""
-    return f"<memo>\n{memo_text(pm)}\n</memo>{ev}\n"
+    return f"Today's date: {date.today()}\n\n<memo>\n{memo_text(pm)}\n</memo>{ev}\n"
 
 
 def run_memo_review(pm: ParsedMemo, pack: EvidencePack | None, provider: Provider, ledger: Ledger, *,
                     language: str = "zh", max_tokens: int = 3000, max_attempts: int = 2,
                     surface: str = "private", meta: dict | None = None) -> ReviewResult:
     system, base = _system(language), _user(pm, pack, language)
-    schema, prices, runs, user = MemoReview.model_json_schema(), prices_for(provider.name), [], base
+    schema, prices, runs, user = review_schema(), prices_for(provider.name), [], base
     report = None
     for attempt in range(1, max_attempts + 1):
         common = dict(surface=surface, task="memo_user_review", provider=provider.name, model=provider.model,
@@ -214,11 +296,11 @@ def run_memo_review(pm: ParsedMemo, pack: EvidencePack | None, provider: Provide
         if res.truncated:
             review, report = None, ReviewReport(ok=False, errors=["answer was cut off; be more concise"])
         else:
-            review, report = validate_review(res.data, pm, pack)
+            review, report = validate_review(res.data, pm, pack, res.text)
         runs.append(ledger.record(AIRun(status="ok" if report.ok else "invalid", output=res.data,
                                         validation=report.model_dump(), tokens_in=res.tokens_in, tokens_out=res.tokens_out,
                                         cost_usd=res.cost_usd(prices), latency_ms=res.latency_ms,
-                                        **{**common, "model": res.model})))
+                                        raw_text=res.text[:4000] or None, **{**common, "model": res.model})))
         if report.ok:
             return ReviewResult(ok=True, review=enforce_minimums(review, pm, language), report=report, runs=runs)
         user = base + "\n\nYour previous answer failed validation. Fix exactly these problems:\n" + report.feedback()

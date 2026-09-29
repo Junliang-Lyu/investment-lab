@@ -42,6 +42,7 @@ class LLMResult(BaseModel):
     tokens_out: int
     latency_ms: int
     truncated: bool = False
+    text: str = ""  # text blocks outside the tool call (fields the model wrote there are recovered in validation)
 
     def cost_usd(self, prices: tuple[float, float]) -> float:
         return (self.tokens_in * prices[0] + self.tokens_out * prices[1]) / 1e6
@@ -100,9 +101,10 @@ class AnthropicProvider:
         if block is None:
             raise LLMError(f"no structured output in response (stop_reason={resp.get('stop_reason')})")
         usage = resp.get("usage", {})
+        text = "\n".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
         return LLMResult(provider=self.name, model=resp.get("model", self.model), data=block["input"],
                          tokens_in=usage.get("input_tokens", 0), tokens_out=usage.get("output_tokens", 0),
-                         latency_ms=latency, truncated=resp.get("stop_reason") == "max_tokens")
+                         latency_ms=latency, truncated=resp.get("stop_reason") == "max_tokens", text=text)
 
 
 class GeminiProvider:

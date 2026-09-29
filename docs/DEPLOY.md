@@ -67,6 +67,8 @@ ln -sfn /opt/investment/releases/<RELEASE_ID> /opt/investment/current
 cd /opt/portfolio/current/deploy
 nano .env.production            # 把 INVEST_API_IMAGE 改成新的 <RELEASE_ID>
 dc config > /dev/null && dc up -d
+dc up -d --force-recreate caddy # 必须：Caddy 挂载的是 current/site，Docker 在创建容器时就解析了这个软链接，
+                                # 不重建就一直是旧版本的前端（2026-09-29 第二次发布时踩过）。主站会中断一两秒。
 dc ps
 dc logs --tail=50 caddy investment-api
 ```

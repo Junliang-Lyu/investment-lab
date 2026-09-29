@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 from .evidence import EvidencePack
 from .ledger import AIRun, BudgetExceeded, Ledger
 from .providers import LLMError, Provider, prices_for
-from .validate import ResearchSkeptic, ValidationReport, schema_for_prompt, validate_output
+from .validate import (TOP_FIELDS, ResearchSkeptic, ValidationReport, params_from_text, schema_for_prompt,
+                       validate_output)
 
 PROMPT_VERSION = "research_skeptic_v12"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
@@ -83,11 +84,13 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
             output, report = None, ValidationReport(ok=False, errors=[
                 f"answer was cut off at {max_tokens} output tokens; keep every field to one or two sentences"])
         else:
+            if isinstance(res.data, dict) and res.text:  # fields written in a text block instead of the tool input
+                res = res.model_copy(update={"data": params_from_text(res.text, res.data, TOP_FIELDS)})
             output, report = validate_output(res.data, pack, user_thesis=thesis)
         runs.append(ledger.record(AIRun(
             status="ok" if report.ok else "invalid", output=res.data, validation=report.model_dump(),
             tokens_in=res.tokens_in, tokens_out=res.tokens_out, cost_usd=res.cost_usd(prices),
-            latency_ms=res.latency_ms, **{**common, "model": res.model})))
+            latency_ms=res.latency_ms, raw_text=res.text[:4000] or None, **{**common, "model": res.model})))
         missing = missing_fields(report)
         if missing and isinstance(res.data, dict):
             # Without strict tool use Haiku sometimes skips a whole list field (usually invalidation_suggestions).

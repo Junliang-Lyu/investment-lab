@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, Decision, LabMemo, MemoAnswers } from "../api";
 import { navigate } from "../App";
-import { useLang } from "../i18n";
+import { Strings, useLang } from "../i18n";
 import { forgetMemo, rememberMemo } from "../memos";
 import { Claim } from "./Skeptic";
 
@@ -25,6 +25,26 @@ function toPayload(f: MemoAnswers): MemoAnswers {
     responses: Object.fromEntries(ES.map((e) => [e, (f.responses[e] ?? "").trim()]).filter(([, v]) => v)),
     review_date: f.review_date || null, review_focus: f.review_focus.trim(),
   };
+}
+
+// A max with a four-digit year makes browsers stop the year field at four digits and move on to the month.
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const TODAY = iso(new Date());
+const MAX_DATE = iso(new Date(Date.now() + 5 * 366 * 864e5));
+const FIELD: Record<string, keyof Strings["mmField"]> = {
+  reasons: "a", target_weight_pct: "target", responses: "b", invalidation: "c", review_date: "date", review_focus: "focus",
+};
+
+/** Validation errors from the API (a list of {loc, msg}) as a sentence naming the sections to fix. */
+function saveError(e: unknown, t: Strings): string {
+  if (e instanceof ApiError && e.status === 422 && Array.isArray(e.detail)) {
+    const names = [...new Set((e.detail as { loc?: unknown[] }[]).map((d) => {
+      const key = (d.loc ?? []).find((x) => typeof x === "string" && x in FIELD) as string | undefined;
+      return key ? t.mmField[FIELD[key]] : null;
+    }).filter(Boolean))] as string[];
+    if (names.length) return t.mmFix(names.join(t.mmSep));
+  }
+  return (e as Error).message;
 }
 
 export default function MemoPage({ id }: { id: string }) {
@@ -74,7 +94,7 @@ export default function MemoPage({ id }: { id: string }) {
   async function save() {
     setSaving(true); setError(null);
     try { apply(await api.saveAnswers(id, toPayload(form!))); }
-    catch (e) { setError((e as Error).message); }
+    catch (e) { setError(saveError(e, t)); }
     finally { setSaving(false); }
   }
 
@@ -197,7 +217,8 @@ export default function MemoPage({ id }: { id: string }) {
         <h3>{t.mmD}</h3>
         <div className="row-fields">
           <label className="inline">{t.mmDate}
-            <input type="date" value={form.review_date ?? ""} onChange={(e) => edit({ review_date: e.target.value || null })} />
+            <input type="date" min={TODAY} max={MAX_DATE} value={form.review_date ?? ""}
+                   onChange={(e) => edit({ review_date: e.target.value || null })} />
           </label>
           <label className="inline grow">{t.mmFocus}
             <input className="wide" maxLength={300} value={form.review_focus} onChange={(e) => edit({ review_focus: e.target.value })} />

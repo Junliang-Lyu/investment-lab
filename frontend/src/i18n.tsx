@@ -76,7 +76,7 @@ const STRINGS = {
     skExamplesShow: "No idea yet? Show example theses",
     skExamplesHide: "Hide examples",
     skExamplesNote: "Examples are starting points to argue with, not recommendations.",
-    skDisabled: "The AI skeptic is not switched on yet. It goes live after the adversarial test set below passes.",
+    skDisabled: "The AI skeptic is switched off right now. The financial snapshot and the pre-trade gate still work.",
     skRemaining: (n: number, d: number) => `${n} of ${d} new theses left today`,
     skCached: "Same thesis asked before: showing the saved answer (no new model call).",
     skBlocked: (a: number, n: number, o: number) =>
@@ -154,6 +154,11 @@ const STRINGS = {
     mmDate: "Review date", mmFocus: "What to check then",
     mmSave: "Save", mmSaving: "Saving…", mmSaved: "Saved", mmUnsaved: "Unsaved changes",
     mmSaveClearsReview: "Saving changed answers clears the AI review; ask for a new one afterwards.",
+    mmField: { a: "§A reasons (each at most 500 characters)", target: "§A target weight (0.1–100)",
+               b: "§B answers (each at most 1,000 characters)", c: "§C conditions (at most 6, each at most 300 characters)",
+               date: "§D review date (within the next five years)", focus: "§D review focus (at most 300 characters)" },
+    mmFix: (f: string) => `Not saved. Please check: ${f}.`,
+    mmSep: "; ",
     mmMissing: "Still missing before the AI review:",
     mmMissingMap: {
       "§A reasons": "§A: at least one reason", "§A target weight": "§A: target weight",
@@ -270,7 +275,7 @@ const STRINGS = {
     skExamplesShow: "还没有想法？看看示例论点",
     skExamplesHide: "收起示例",
     skExamplesNote: "示例只是用来被反驳的起点，不是推荐。",
-    skDisabled: "AI 反方还没有开启。下面的对抗性测试通过后才会上线。",
+    skDisabled: "AI 反方目前处于关闭状态。财报快照和交易前检查仍可使用。",
     skRemaining: (n: number, d: number) => `今天还可以提交 ${n}/${d} 个新论点`,
     skCached: "这个论点之前有人问过：显示保存的回答（没有新的模型调用）。",
     skBlocked: (a: number, n: number, o: number) =>
@@ -344,6 +349,10 @@ const STRINGS = {
     mmDate: "复盘日期", mmFocus: "复盘时重点看什么",
     mmSave: "保存", mmSaving: "正在保存…", mmSaved: "已保存", mmUnsaved: "有未保存的修改",
     mmSaveClearsReview: "保存修改后的回应会清空 AI 审查，之后需要重新审查。",
+    mmField: { a: "§A 理由（每条最多 500 字）", target: "§A 目标仓位（0.1–100）", b: "§B 回应（每条最多 1000 字）",
+               c: "§C 失效条件（最多 6 条，每条最多 300 字）", date: "§D 复盘日期（五年之内）", focus: "§D 复盘重点（最多 300 字）" },
+    mmFix: (f: string) => `没有保存，请检查：${f}。`,
+    mmSep: "；",
     mmMissing: "请求 AI 审查前还缺：",
     mmMissingMap: {
       "§A reasons": "§A：至少一条理由", "§A target weight": "§A：目标仓位",

@@ -174,7 +174,7 @@ _NUM = re.compile(
     re.IGNORECASE,
 )
 _STRIP = [
-    re.compile(r"\b\d{4}-\d{2}-\d{2}\b"),               # ISO dates
+    re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)"),       # ISO dates (also inside Chinese text, no \b there)
     # Product and model codes ("H20", "B200", "GB300", "M4") and legal references ("Section 232", "第232条").
     re.compile(r"(?<![A-Za-z0-9$.,])[A-Za-z]{1,4}\d{1,4}[A-Za-z]{0,2}(?![A-Za-z0-9%]|\.\d)"),
     re.compile(r"\b(?:Section|Item|Note|Rule|Part|Article|Schedule|Form|Chapter)\s+\d+[A-Za-z]?\b", re.I),
@@ -580,11 +580,11 @@ TOP_FIELDS = ("thesis_restated", "bull_case", "bear_case", "weakest_assumption",
               "verify_questions")
 
 
-def _split_embedded_params(out: dict) -> dict:
+def _split_embedded_params(out: dict, fields: tuple[str, ...] = TOP_FIELDS) -> dict:
     """Without strict tool use Haiku sometimes ends a string field and writes the next field in the tool-call
     markup inside that string ('...</weakest_assumption>\n<parameter name="invalidation_suggestions">[...]').
     Cut the markup off the string and put each embedded field where it belongs (only fields that are missing)."""
-    for key in ("thesis_restated", "weakest_assumption"):
+    for key in [k for k, v in out.items() if isinstance(v, str)]:
         text = out.get(key)
         if not isinstance(text, str) or '<parameter name="' not in text:
             continue
@@ -592,7 +592,7 @@ def _split_embedded_params(out: dict) -> dict:
         out[key] = _CLOSING_TAGS.sub("", parts[0]).strip()
         for name, value in zip(parts[1::2], parts[2::2]):
             value = _CLOSING_TAGS.sub("", value.replace("</parameter>", "")).strip()
-            if name not in TOP_FIELDS or out.get(name):
+            if name not in fields or out.get(name):
                 continue
             if value.startswith(("[", "{")):
                 for candidate in (value, _fix_cjk_quotes(value)):
@@ -604,6 +604,15 @@ def _split_embedded_params(out: dict) -> dict:
             else:
                 out[name] = value
     return out
+
+
+def params_from_text(text: str, out: dict, fields: tuple[str, ...]) -> dict:
+    """Fields the model wrote as tool-call markup in a text block instead of the tool input."""
+    if not text or '<parameter name="' not in text:
+        return out
+    holder = {"_": "x" + text[text.index('<parameter name="'):]}
+    got = _split_embedded_params(holder, fields)
+    return {**out, **{k: v for k, v in got.items() if k in fields and not out.get(k)}}
 
 
 def _unwrap_json_strings(raw: dict) -> dict:

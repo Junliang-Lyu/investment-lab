@@ -121,10 +121,10 @@ def test_skipping_the_review_needs_a_reason(tmp_path, pack):
 def test_invalid_review_is_not_stored(tmp_path, pack):
     bad = review_json()
     bad["summary"] = "Investors should buy before earnings."
-    c, prov, m = start(tmp_path, pack, [bad, bad])
+    c, prov, m = start(tmp_path, pack, [bad, bad, bad])  # the Lab allows three attempts, then fails closed
     c.put(f"/api/lab/memos/{m['id']}/answers", json=ANSWERS)
     r = c.post(f"/api/lab/memos/{m['id']}/review").json()
-    assert r["ok"] is False and r["checks"]["advice"] >= 1 and prov.calls == 3
+    assert r["ok"] is False and r["checks"]["advice"] >= 1 and prov.calls == 4
     assert c.get(f"/api/lab/memos/{m['id']}").json()["status"] == "user_responded"
 
 
@@ -184,3 +184,11 @@ def test_custom_portfolio_is_checked_not_stored(tmp_path, pack):
     bad = copy.deepcopy(body)
     bad["custom"]["positions"][0]["symbol"] = "not a ticker!"
     assert c.post("/api/lab/gate", json=bad).status_code == 422
+
+
+def test_review_date_must_be_plausible(tmp_path, pack):
+    c, _, m = start(tmp_path, pack)
+    r = c.put(f"/api/lab/memos/{m['id']}/answers", json={**ANSWERS, "review_date": "111111-11-05"})
+    assert r.status_code == 422
+    r = c.put(f"/api/lab/memos/{m['id']}/answers", json={**ANSWERS, "review_date": "2099-01-01"})
+    assert r.status_code == 422 and "five years" in r.text

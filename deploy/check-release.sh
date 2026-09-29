@@ -16,6 +16,16 @@ c=$(code "$LAB/"); loc=$(curl -s -o /dev/null -w '%{redirect_url}' --max-time 30
 c=$(code "$LAB/lab"); [ "$c" = 200 ] && pass "/lab page" || bad "/lab page" "got $c"
 c=$(code "$LAB/lab/gate"); [ "$c" = 200 ] && pass "/lab/gate deep link" || bad "/lab/gate deep link" "got $c"
 
+# The page served must be this release's build. Caddy bind-mounts /opt/investment/current/site, and Docker resolves
+# that symlink when the container is created, so after switching releases Caddy must be recreated.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$HERE/site/index.html" ]; then
+  want=$(grep -o 'assets/index-[A-Za-z0-9_-]*\.js' "$HERE/site/index.html" | head -1)
+  got=$(curl -s --max-time 30 "$LAB/lab" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+  [ -n "$want" ] && [ "$want" = "$got" ] && pass "served frontend is this release ($want)" \
+    || bad "served frontend is this release" "serving ${got:-?}, release has ${want:-?}; run: dc up -d --force-recreate caddy"
+fi
+
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')
 echo "$h" | grep -qi "^content-security-policy: default-src 'self'" && pass "CSP header" || bad "CSP header" "missing"
 echo "$h" | grep -qi "^x-frame-options: DENY" && pass "X-Frame-Options" || bad "X-Frame-Options" "missing"

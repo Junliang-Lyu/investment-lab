@@ -90,6 +90,13 @@ class Answers(BaseModel):
     def _focus(cls, v: str) -> str:
         return _clean(v)
 
+    @field_validator("review_date")
+    @classmethod
+    def _date(cls, v: date | None) -> date | None:
+        if v is not None and not (date(2000, 1, 1) <= v <= date.today() + timedelta(days=5 * 366)):
+            raise ValueError("review date must be within the next five years")
+        return v
+
 
 class FinalizeRequest(BaseModel):
     decision: Literal["watchlist", "paper", "eligible_for_gate"]
@@ -118,6 +125,9 @@ class MemoStore:
                 CREATE TABLE IF NOT EXISTS memo_reviews (id INTEGER PRIMARY KEY, at TEXT NOT NULL, ip_hash TEXT NOT NULL,
                                                          status TEXT NOT NULL, cost REAL NOT NULL);
             """)
+            cols = {row[1] for row in db.execute("PRAGMA table_info(memo_reviews)")}
+            if "checks" not in cols:  # added 2026-09-29: why a review failed (field names and messages, no visitor text)
+                db.execute("ALTER TABLE memo_reviews ADD COLUMN checks TEXT")
 
     def now(self) -> datetime:
         return self.lab.clock()
@@ -146,10 +156,10 @@ class MemoStore:
             return db.execute("SELECT COUNT(*) FROM memo_reviews WHERE ip_hash=? AND at>=? AND status!='cached'",
                               (ip_hash, self._day_start())).fetchone()[0]
 
-    def add_review_request(self, ip_hash: str, status: str, cost: float) -> None:
+    def add_review_request(self, ip_hash: str, status: str, cost: float, checks: str | None = None) -> None:
         with self._lock, self.lab._db() as db:
-            db.execute("INSERT INTO memo_reviews (at, ip_hash, status, cost) VALUES (?, ?, ?, ?)",
-                       (self.now().isoformat(), ip_hash, status, cost))
+            db.execute("INSERT INTO memo_reviews (at, ip_hash, status, cost, checks) VALUES (?, ?, ?, ?, ?)",
+                       (self.now().isoformat(), ip_hash, status, cost, checks))
 
     def insert(self, rec: dict) -> None:
         cols = list(rec)
@@ -419,12 +429,19 @@ def add_memo_routes(r: APIRouter, settings, sk) -> MemoStore | None:
             raise HTTPException(503, "Today's AI budget for the Lab is used up. Please try again tomorrow.")
         pm, pack = parsed_memo(rec), pack_for(rec)
         with sk.model_lock:
-            result = run_memo_review(pm, pack, sk.provider_factory(), sk.store, language=rec["lang"], surface="lab")
+            result = run_memo_review(pm, pack, sk.provider_factory(), sk.store, language=rec["lang"], surface="lab",
+                                     max_attempts=3)
         cost = sum(run.cost_usd for run in result.runs)
         last = result.runs[-1] if result.runs else None
         status = ("ok" if result.ok else last.status if last and last.status in ("budget_blocked", "error")
                   else "invalid")
-        store.add_review_request(ip_hash, status, cost)
+        rep = result.report
+        checks = None
+        if rep is not None and not result.ok:  # schema errors are field paths and messages; no visitor text
+            checks = json.dumps({"errors": rep.errors[:20], "forbidden": len(rep.forbidden),
+                                 "ungrounded": len(rep.ungrounded), "echoed": len(rep.echoed)})
+            log.warning("memo review %s failed validation: %s", rec["ticker"], checks)
+        store.add_review_request(ip_hash, status, cost, checks)
         if status == "budget_blocked":
             raise HTTPException(503, "Today's AI budget for the Lab is used up. Please try again tomorrow.")
         if status == "error":

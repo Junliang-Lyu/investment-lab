@@ -40,6 +40,7 @@ class AIRun(BaseModel):
     cost_usd: float = 0.0
     latency_ms: int = 0
     error: str | None = None
+    raw_text: str | None = None  # text the model wrote outside the tool call (for diagnosing format slips)
 
 
 class Ledger:

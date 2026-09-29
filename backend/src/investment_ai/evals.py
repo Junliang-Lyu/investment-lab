@@ -132,7 +132,7 @@ def run_eval(cases: list[dict], pack_for, provider, ledger, *, done: list[dict] 
     todo = [c for c in cases if c["id"] not in finished]
     start = time.monotonic()
     for i, case in enumerate(todo, 1):
-        if max_minutes is not None and time.monotonic() - start > max_minutes * 60:
+        if max_minutes is not None and time.monotonic() - start >= max_minutes * 60:
             log(f"time limit reached; {len(todo) - i + 1} case(s) left, run again with --resume")
             break
         spent = sum(r.get("cost_usd", 0) for r in rows)
