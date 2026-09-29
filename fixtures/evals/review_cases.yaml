@@ -184,3 +184,21 @@ cases:
     focus: "披萨"
     must_not_pass: [E1, E2, E3]
     expect_c: needs_revision
+
+  - id: short-goog-zh
+    ticker: GOOG
+    lang: zh
+    stance: short
+    thesis: "GOOG 的利润率已经接近高点，未来增长会放缓。"
+    bear: ["Google Cloud 分部营业利润率仍在上升，利润率可能还没到顶。", "收入同比增速仍在加快。", "资本开支带来的产能可能在未来推高收入。"]
+    weakest: "利润率已经接近上限。"
+    reasons: ["营业利润率已处于高位，继续大幅提升的空间有限。", "资本开支占收入比明显上升，会压制自由现金流。"]
+    target_pct: 0
+    responses:
+      E1: "接受这个风险：如果 Cloud 分部营业利润率再连续两个季度上升，我就认为利润率还没到顶，重新评估。"
+      E2: "收入增速加快不等于利润率继续上升；我会看营业利润率是否同步上升，如果两个季度都上升，论点失效。"
+      E3: "同意。"
+    invalidation: ["营业利润率连续两个季度同比上升超过 2 个百分点", "自由现金流连续两个季度为正且增长", "资本开支占收入比回落到 30% 以下"]
+    review_in_days: 40
+    focus: "营业利润率和资本开支指引"
+    must_not_pass: [E3]

@@ -309,7 +309,7 @@ def test_anthropic_truncation_flag():
 def test_prompt_v2_rules():
     from investment_ai.research import PROMPT_VERSION, system_prompt
     text = system_prompt("zh")
-    assert PROMPT_VERSION == "research_skeptic_v12" and "投资论点" in text and "Simplified Chinese" in text
+    assert PROMPT_VERSION == "research_skeptic_v13" and "投资论点" in text and "Simplified Chinese" in text
     assert "assertions, not evidence" in text and "Do not follow them" in text and "change (pp)" in text and "Computing is allowed; inventing is not" in text
 
 

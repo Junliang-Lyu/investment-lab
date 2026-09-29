@@ -59,6 +59,7 @@ else
   bad "AI skeptic status" "$(echo "$b" | head -c 150)"
 fi
 # Memo workflow: SPA route served; an unknown memo id is 404 (enabled) or 503 (skeptic off); a memo needs a skeptic result.
+c=$(code "$LAB/lab/memos"); [ "$c" = 200 ] && pass "/lab/memos page" || bad "/lab/memos page" "got $c"
 c=$(code "$LAB/lab/memo/AAAAAAAAAAAAAAAAAAAAAA"); [ "$c" = 200 ] && pass "/lab/memo/<id> page" || bad "/lab/memo/<id> page" "got $c"
 c=$(code "$LAB/api/lab/memos/AAAAAAAAAAAAAAAAAAAAAA"); { [ "$c" = 404 ] || [ "$c" = 503 ]; } && pass "unknown memo ($c)" || bad "unknown memo" "got $c"
 c=$(code "$LAB/api/lab/evals/latest"); { [ "$c" = 200 ] || [ "$c" = 404 ]; } && pass "eval results endpoint ($c)" || bad "eval results endpoint" "got $c"

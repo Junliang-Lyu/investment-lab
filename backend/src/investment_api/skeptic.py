@@ -140,10 +140,11 @@ class SkepticRequest(BaseModel):
     ticker: str = Field(max_length=10)
     thesis: str = Field(min_length=10, max_length=400)
     lang: Literal["zh", "en"] = "en"
+    stance: Literal["long", "short"] = "long"  # bullish or bearish thesis; the skeptic argues the other way
 
 
-def cache_key(ticker: str, lang: str, thesis: str) -> str:
-    return hashlib.sha256(f"{ticker}|{lang}|{thesis.lower()}|{PROMPT_VERSION}".encode()).hexdigest()
+def cache_key(ticker: str, lang: str, thesis: str, stance: str = "long") -> str:
+    return hashlib.sha256(f"{ticker}|{lang}|{stance}|{thesis.lower()}|{PROMPT_VERSION}".encode()).hexdigest()
 
 
 def render(output: dict, pack, lang: str) -> dict:
@@ -222,7 +223,7 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
         thesis = normalize_thesis(req.thesis)
         if len(thesis) < 10:
             raise HTTPException(422, "thesis is too short")
-        ip_hash, key, now = visitor(request), cache_key(ticker, req.lang, thesis), store.clock()
+        ip_hash, key, now = visitor(request), cache_key(ticker, req.lang, thesis, req.stance), store.clock()
         base = dict(id=uuid.uuid4().hex, at=now.isoformat(), ip_hash=ip_hash, ticker=ticker, lang=req.lang,
                     thesis=thesis, cache_key=key)
 
@@ -253,6 +254,7 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
 
         with model_lock:  # one model call at a time keeps spending and memory predictable
             result = run_research_skeptic(pack, thesis, provider_factory(), store, surface="lab", language=req.lang,
+                                          stance=req.stance,
                                           max_attempts=LAB_ATTEMPTS, max_tokens=LAB_MAX_TOKENS)
         cost = sum(run.cost_usd for run in result.runs)
         last = result.runs[-1] if result.runs else None

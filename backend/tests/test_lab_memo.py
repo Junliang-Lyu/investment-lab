@@ -192,3 +192,21 @@ def test_review_date_must_be_plausible(tmp_path, pack):
     assert r.status_code == 422
     r = c.put(f"/api/lab/memos/{m['id']}/answers", json={**ANSWERS, "review_date": "2099-01-01"})
     assert r.status_code == 422 and "five years" in r.text
+
+
+def test_bearish_thesis_flows_through(tmp_path, pack):
+    prov = Counting([good_output(pack), review_json()])
+    c = make(tmp_path, prov)
+    thesis = "GOOG margins are close to their peak and growth will slow."
+    r = c.post("/api/lab/skeptic", json={"ticker": "GOOG", "thesis": thesis, "lang": "en", "stance": "short"})
+    assert r.json()["ok"] and "Thesis direction: bearish" in prov.fake.calls[0]["user"]
+    # The cache is per direction: the same words as a bullish thesis are a different question.
+    assert c.post("/api/lab/memos", json={"ticker": "GOOG", "thesis": thesis, "lang": "en"}).status_code == 409
+    m = c.post("/api/lab/memos", json={"ticker": "GOOG", "thesis": thesis, "lang": "en", "stance": "short"}).json()
+    assert m["stance"] == "short"
+    m = c.put(f"/api/lab/memos/{m['id']}/answers", json={**ANSWERS, "target_weight_pct": 0}).json()
+    assert m["status"] == "user_responded" and m["answers"]["target_weight_pct"] == 0
+    c.post(f"/api/lab/memos/{m['id']}/review")
+    assert "Thesis direction: bearish" in prov.fake.calls[1]["user"]
+    pm = parse_memo(c.get(f"/api/lab/memos/{m['id']}/markdown").text)
+    assert pm.stance == "short" and pm.target_weight == 0

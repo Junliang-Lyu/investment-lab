@@ -12,6 +12,7 @@ PLACEHOLDER = re.compile(r"^(?:暂时?没想好|待定|无|tbd|n/?a|-|—)$", re
 
 class ParsedMemo(BaseModel):
     ticker: str
+    stance: str = "long"   # "long" (bullish) or "short" (bearish); a memo line "方向 / Direction: 看空 / bearish"
     one_liner: str = ""
     bear: list[str] = Field(default_factory=list)          # E1..E3 claim text
     weakest_assumption: str = ""
@@ -68,6 +69,8 @@ def parse_memo(md: str, today: date | None = None) -> ParsedMemo:
     pm = ParsedMemo(ticker=title.group(1) if title else "")
 
     pm.one_liner = "\n".join(_code_block(sec.get(1, ""))).strip()
+    if re.search(r"(?:方向|Direction)\s*[:：]\s*(?:看空|bearish|short)", sec.get(1, ""), re.I):
+        pm.stance = "short"
     pm.bear = [re.sub(r"^\[[^\]]+\]\s*", "", m.strip()) for m in re.findall(r"\*\*E\d\.\s*(.*?)\*\*", sec.get(5, ""))]
     body7 = [ln.strip() for ln in sec.get(7, "").splitlines() if ln.strip()]
     pm.weakest_assumption = body7[0] if body7 else ""

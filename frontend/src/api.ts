@@ -59,7 +59,7 @@ export type MemoReview = {
 export type MemoStatus = "idea" | "researching" | "skeptic_done" | "user_responded" | "reviewed" | "final" | "archived";
 export type Decision = "watchlist" | "paper" | "eligible_for_gate";
 export type LabMemo = {
-  id: string; ticker: string; lang: "zh" | "en"; thesis: string; created_at: string; updated_at: string; expires_at: string;
+  id: string; ticker: string; lang: "zh" | "en"; thesis: string; stance: "long" | "short"; created_at: string; updated_at: string; expires_at: string;
   status: MemoStatus; version: number; decision: Decision | null;
   events: { from: string; to: string; actor: string; at: string; reason: string | null }[];
   skeptic: SkepticResult; skeptic_meta: { model: string | null; prompt_version: string };
@@ -100,10 +100,10 @@ export const api = {
   theses: (ticker: string, lang: string) =>
     call<{ id: string; angle: string; text: string }[]>(`/api/lab/theses/${encodeURIComponent(ticker)}?lang=${lang}`),
   skepticStatus: () => call<SkepticStatus>("/api/lab/skeptic/status"),
-  skeptic: (body: { ticker: string; thesis: string; lang: string }) =>
+  skeptic: (body: { ticker: string; thesis: string; lang: string; stance: string }) =>
     call<SkepticResponse>("/api/lab/skeptic", { method: "POST", body: JSON.stringify(body) }),
   evals: () => call<EvalReport>("/api/lab/evals/latest"),
-  createMemo: (body: { ticker: string; thesis: string; lang: string }) =>
+  createMemo: (body: { ticker: string; thesis: string; lang: string; stance: string }) =>
     call<LabMemo>("/api/lab/memos", { method: "POST", body: JSON.stringify(body) }),
   memo: (id: string) => call<LabMemo>(`/api/lab/memos/${encodeURIComponent(id)}`),
   saveAnswers: (id: string, a: MemoAnswers) =>

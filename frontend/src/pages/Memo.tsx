@@ -87,6 +87,7 @@ export default function MemoPage({ id }: { id: string }) {
   if (!memo || !form) return <section><p className="muted">{error ?? t.mmLoading}</p></section>;
 
   const final = memo.status === "final";
+  const short = memo.stance === "short";
   const step = STEP_OF[memo.status] ?? 1;
   const sk = memo.skeptic;
   const edit = (patch: Partial<MemoAnswers>) => { setForm({ ...form, ...patch }); setDirty(true); };
@@ -136,7 +137,7 @@ export default function MemoPage({ id }: { id: string }) {
 
   return (
     <section className="memo">
-      <h1>{t.mmTitle(memo.ticker)} <span className="muted small">{t.mmVersion(memo.version)}</span></h1>
+      <h1>{t.mmTitle(memo.ticker)} <span className="muted small">{t.stance[short ? "short" : "long"]} · {t.mmVersion(memo.version)}</span></h1>
       <ol className="stepper">
         {t.mmSteps.map((s, i) => (
           <li key={s} className={i < step ? "done" : i === step ? "now" : ""}><span className="num">{i + 1}</span>{s}</li>
@@ -170,8 +171,8 @@ export default function MemoPage({ id }: { id: string }) {
 
       <h2 className="h2">2 · {t.mmSteps[1]}</h2>
       <fieldset className="answers" disabled={final || saving}>
-        <h3>{t.mmA}</h3>
-        <p className="muted small">{t.mmAHelp}</p>
+        <h3>{short ? t.mmAShort : t.mmA}</h3>
+        <p className="muted small">{short ? t.mmAHelpShort : t.mmAHelp}</p>
         {form.reasons.map((r, i) => (
           <textarea key={i} rows={2} maxLength={500} value={r} placeholder={t.mmReasonPh(i + 1)}
                     onChange={(e) => edit({ reasons: form.reasons.map((x, j) => (j === i ? e.target.value : x)) })} />
@@ -179,8 +180,8 @@ export default function MemoPage({ id }: { id: string }) {
         {form.reasons.length < 5 && !final && (
           <button type="button" className="linkish" onClick={() => edit({ reasons: [...form.reasons, ""] })}>+ {t.mmAddReason}</button>
         )}
-        <label className="inline">{t.mmTarget}
-          <input type="number" min={0.1} max={100} step={0.1} value={form.target_weight_pct ?? ""}
+        <label className="inline">{short ? t.mmTargetShort : t.mmTarget}
+          <input type="number" min={0} max={100} step={0.1} value={form.target_weight_pct ?? ""}
                  onChange={(e) => edit({ target_weight_pct: e.target.value === "" ? null : Number(e.target.value) })} />
         </label>
 
@@ -300,7 +301,7 @@ export default function MemoPage({ id }: { id: string }) {
       <p className="muted small">{t.mmGateLede}</p>
       <div className="actions">
         <button type="button" className={final ? "primary" : "secondary"}
-                onClick={() => navigate("/lab/gate", { memo: id, symbol: memo.ticker })}>{t.mmGateBtn} →</button>
+                onClick={() => navigate("/lab/gate", { memo: id, symbol: memo.ticker, side: short ? "sell" : "buy" })}>{t.mmGateBtn} →</button>
         {!final && <span className="muted small">{t.mmNeedsDecision}</span>}
       </div>
     </section>

@@ -33,7 +33,7 @@ def load_cases(path: Path | None = None) -> list[dict]:
 def parsed(case: dict, today: date | None = None) -> ParsedMemo:
     today = today or date.today()
     inval = case.get("invalidation", [])
-    return ParsedMemo(ticker=case["ticker"], one_liner=case["thesis"], bear=case["bear"],
+    return ParsedMemo(ticker=case["ticker"], stance=case.get("stance", "long"), one_liner=case["thesis"], bear=case["bear"],
                       weakest_assumption=case.get("weakest", ""), reasons=_meaningful(case.get("reasons", [])),
                       target_weight=case["target_pct"] / 100 if case.get("target_pct") else None,
                       responses={k: v for k, v in case.get("responses", {}).items() if v},

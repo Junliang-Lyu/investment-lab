@@ -3,6 +3,7 @@ import { api, CustomPortfolio, DemoPortfolio, GateResult } from "../api";
 import { pct, usd } from "../format";
 import { useLang } from "../i18n";
 import { savedMemos } from "../memos";
+import { navigate } from "../App";
 
 const HOLDINGS = "lab-holdings";
 const EMPTY: CustomPortfolio = { cash: 5000, positions: [{ symbol: "VOO", market_value: 5000, sleeve: "core" }] };
@@ -27,7 +28,7 @@ export default function Gate() {
   const [memos] = useState(savedMemos);
   const [memoId, setMemoId] = useState(params.get("memo") ?? "");
   const [holdings, setHoldings] = useState<CustomPortfolio>(loadHoldings);
-  const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [side, setSide] = useState<"buy" | "sell">(params.get("side") === "sell" ? "sell" : "buy");
   const [amount, setAmount] = useState(800);
   const [attest, setAttest] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState<GateResult | null>(null);
@@ -137,6 +138,10 @@ export default function Gate() {
               {memoChoices.map((m) => <option key={m.id} value={m.id}>{m.ticker} · {m.thesis.slice(0, 30)}</option>)}
             </select>
           </label>
+          {memoId && (
+            <a href={`/lab/memo/${memoId}`} className="small"
+               onClick={(e) => { e.preventDefault(); navigate(`/lab/memo/${memoId}`); }}>{t.gtOpenMemo} →</a>
+          )}
           <button type="submit">{t.runGate}</button>
           {portfolio && <span className="muted small">{t.netValue(usd(portfolio.net_liquidation), portfolio.price_date, portfolio.rule_set)}</span>}
         </form>

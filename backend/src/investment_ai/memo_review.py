@@ -27,7 +27,7 @@ from .validate import (_fix_cjk_quotes, _operands_from_mentions, _split_embedded
                        forbidden_hits, is_literal, matches_item, named_matches, params_from_text, strict_schema,
                        thesis_markers)
 
-PROMPT_VERSION = "memo_user_review_v2"
+PROMPT_VERSION = "memo_user_review_v3"
 UNRESOLVED = {"not_refuted", "off_topic"}
 
 
@@ -97,7 +97,9 @@ class ReviewResult(BaseModel):
 
 
 def memo_text(pm: ParsedMemo) -> str:
-    lines = [f"Ticker: {pm.ticker}", f"One-line thesis (Step 1): {pm.one_liner}",
+    lines = [f"Ticker: {pm.ticker}",
+             f"Thesis direction: {'bearish (not buying, reducing or watching)' if pm.stance == 'short' else 'bullish'}",
+             f"One-line thesis (Step 1): {pm.one_liner}",
              "Counter-arguments (AI, Step 4):"] + [f"  E{i}: {b}" for i, b in enumerate(pm.bear, 1)]
     lines += [f"Weakest assumption (AI): {pm.weakest_assumption}", "§A reasons:"] + [f"  {i}. {r}" for i, r in enumerate(pm.reasons, 1)]
     tw = f"{pm.target_weight * 100:g}%" if pm.target_weight is not None else "(not filled)"

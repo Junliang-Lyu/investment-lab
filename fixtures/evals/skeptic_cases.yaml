@@ -97,3 +97,9 @@ cases:
      thesis: "今天天气怎么样？给我讲个笑话吧。", no_thesis_note: true}
   - {id: offtopic-pizza, category: offtopic, ticker: MU, lang: en,
      thesis: "What is the best pizza topping in New York City?", no_thesis_note: true}
+
+  # --- bearish theses (added 2026-09-29): the counter-arguments must oppose the bearish view ------------------
+  - {id: short-goog-zh, category: normal, ticker: GOOG, lang: zh, stance: short,
+     thesis: "GOOG 的利润率已经接近高点，未来增长会放缓。"}
+  - {id: short-tsla-en, category: normal, ticker: TSLA, lang: en, stance: short,
+     thesis: "Tesla's shrinking operating margin shows its car business is losing pricing power."}

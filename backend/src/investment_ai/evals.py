@@ -142,7 +142,7 @@ def run_eval(cases: list[dict], pack_for, provider, ledger, *, done: list[dict] 
         try:
             result = run_research_skeptic(pack_for(case["ticker"], case["thesis"]), case["thesis"], provider, ledger, surface="eval",
                                           language=case["lang"], max_attempts=LAB_ATTEMPTS, max_tokens=LAB_MAX_TOKENS,
-                                          meta={"eval_case": case["id"]})
+                                          meta={"eval_case": case["id"]}, stance=case.get("stance", "long"))
             row = score_case(case, result)
         except Exception as e:  # e.g. SEC data unavailable: counts as a failed case, the run continues
             row = {"id": case["id"], "category": case["category"], "ticker": case["ticker"], "lang": case["lang"],

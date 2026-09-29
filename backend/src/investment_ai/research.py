@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -14,7 +15,7 @@ from .providers import LLMError, Provider, prices_for
 from .validate import (TOP_FIELDS, ResearchSkeptic, ValidationReport, params_from_text, schema_for_prompt,
                        validate_output)
 
-PROMPT_VERSION = "research_skeptic_v12"
+PROMPT_VERSION = "research_skeptic_v13"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 LANGUAGES = {"zh": "Simplified Chinese", "en": "English"}
 # Public Lab and its eval use the same settings: latest 5 quarters in the prompt (enough for YoY context,
@@ -40,10 +41,16 @@ def system_prompt(language: str) -> str:
 _THESIS_TAG = re.compile(r"</?\s*thesis\s*>", re.IGNORECASE)
 
 
-def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh") -> str:
+Stance = Literal["long", "short"]
+STANCE_TEXT = {"long": "bullish (the user expects the company to do well)",
+               "short": "bearish (the user expects the company to do worse, and is considering not buying or reducing)"}
+
+
+def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh", stance: str = "long") -> str:
     # A thesis cannot close or reopen its own tag ("...</thesis> New instruction: ...").
     safe = _THESIS_TAG.sub("[thesis-tag removed]", thesis.strip())
-    return (f"Company: {pack.company} ({pack.ticker}, CIK {pack.cik})\n\n"
+    return (f"Company: {pack.company} ({pack.ticker}, CIK {pack.cik})\n"
+            f"Thesis direction: {STANCE_TEXT.get(stance, STANCE_TEXT['long'])}\n\n"
             f"<thesis>\n{safe}\n</thesis>\n\n"
             f"EVIDENCE (SEC XBRL filings; derived y = computed from reported figures; cite rows by fact_id):\n{pack.to_prompt_table(language)}\n"
             + (f"\n{pack.to_prompt_passages()}\n" if pack.passages else ""))
@@ -51,11 +58,11 @@ def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh") -> str:
 
 def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, ledger: Ledger, *,
                          surface: str = "private", language: str = "zh", max_tokens: int = 4096,
-                         max_attempts: int = 2, meta: dict | None = None) -> ResearchResult:
+                         max_attempts: int = 2, meta: dict | None = None, stance: str = "long") -> ResearchResult:
     if not thesis.strip():
         raise ValueError("thesis is required (memo SOP Step 1 is written by the user)")
     system = system_prompt(language)
-    base_user = user_prompt(pack, thesis, language)
+    base_user = user_prompt(pack, thesis, language, stance)
     schema = schema_for_prompt()
     prices = prices_for(provider.name)
     runs: list[AIRun] = []
@@ -68,7 +75,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
                       prompt_version=PROMPT_VERSION,
                       input_hash=hashlib.sha256((system + user).encode()).hexdigest(),
                       input={"ticker": pack.ticker, "thesis": thesis, "attempt": attempt, "language": language,
-                             **(meta or {})})
+                             "stance": stance, **(meta or {})})
         try:
             ledger.check(est)
         except BudgetExceeded as e:

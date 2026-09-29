@@ -174,3 +174,12 @@ label.radio { display: flex; gap: 8px; align-items: center; cursor: pointer; }
 .trade select { max-width: 260px; }
 @media (max-width: 600px) { .trade select { max-width: 100%; } .holdings input { width: 90px; } }
 .savebar.sticky { position: sticky; bottom: 0; }
+.memocards { list-style: none; padding: 0; display: grid; gap: 10px; }
+.memocards a { display: grid; gap: 4px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 10px; color: var(--text); text-decoration: none; }
+.memocards a:hover { border-color: var(--accent); }
+.memocards a.gone { opacity: 0.5; cursor: default; }
+.memocards .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.stance { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.9rem; }
+.stance label { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text); }
+form.skeptic .stance label { flex-direction: row; font-size: 0.95rem; color: var(--text); }

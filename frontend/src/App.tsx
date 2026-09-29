@@ -4,10 +4,11 @@ import Company from "./pages/Company";
 import Gate from "./pages/Gate";
 import Skeptic from "./pages/Skeptic";
 import MemoPage from "./pages/Memo";
+import MemoList from "./pages/MemoList";
 import { LangProvider, useLang } from "./i18n";
 
-type Route = "/lab" | "/lab/company" | "/lab/gate" | "/lab/skeptic" | "/lab/memo";
-const ROUTES: Route[] = ["/lab", "/lab/company", "/lab/gate", "/lab/skeptic"];
+type Route = "/lab" | "/lab/company" | "/lab/gate" | "/lab/skeptic" | "/lab/memo" | "/lab/memos";
+const ROUTES: Route[] = ["/lab", "/lab/company", "/lab/gate", "/lab/skeptic", "/lab/memos"];
 const MEMO = /^\/lab\/memo\/([A-Za-z0-9_-]{20,40})$/;
 
 function current(): { route: Route; memoId?: string } {
@@ -39,7 +40,7 @@ function Shell() {
   useEffect(() => { window.scrollTo(0, 0); }, [route, memoId]);
 
   const link = (to: Route, text: string) => (
-    <a href={to} className={route === to ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate(to); }}>{text}</a>
+    <a href={to} className={route === to || (to === "/lab/memos" && route === "/lab/memo") ? "active" : ""} onClick={(e) => { e.preventDefault(); navigate(to); }}>{text}</a>
   );
 
   return (
@@ -50,6 +51,7 @@ function Shell() {
           <nav>
             {link("/lab/company", t.navSnapshot)}
             {link("/lab/skeptic", t.navSkeptic)}
+            {link("/lab/memos", t.navMemos)}
             {link("/lab/gate", t.navGate)}
             <button className="lang" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label="Switch language">
               {t.switchTo}
@@ -63,6 +65,7 @@ function Shell() {
         {route === "/lab/gate" && <Gate />}
         {route === "/lab/skeptic" && <Skeptic />}
         {route === "/lab/memo" && memoId && <MemoPage id={memoId} />}
+        {route === "/lab/memos" && <MemoList />}
       </main>
       <footer className="wrap foot">
         {t.footer}{" "}

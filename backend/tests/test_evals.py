@@ -75,7 +75,7 @@ def test_cli_runs_selected_cases(pack, tmp_path):
                 client=FakeEdgar(), ledger=Ledger(tmp_path / "l.jsonl"))
     latest = json.loads((tmp_path / "latest.json").read_text(encoding="utf-8"))
     assert code == 0 and latest["summary"]["cases"] == 1 and latest["cases"][0]["final_ok"]
-    assert latest["prompt_version"] == "research_skeptic_v12"
+    assert latest["prompt_version"] == "research_skeptic_v13"
 
 
 def test_cli_resumes_after_interruption(pack, tmp_path):

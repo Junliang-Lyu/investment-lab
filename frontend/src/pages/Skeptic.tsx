@@ -74,7 +74,9 @@ export default function Skeptic() {
   const [answer, setAnswer] = useState<SkepticResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<EvalReport | null>(null);
-  const [asked, setAsked] = useState<{ ticker: string; thesis: string } | null>(null);
+  const [asked, setAsked] = useState<{ ticker: string; thesis: string; stance: string } | null>(null);
+  const [stance, setStance] = useState<"long" | "short">(
+    new URLSearchParams(window.location.search).get("stance") === "short" ? "short" : "long");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -93,8 +95,8 @@ export default function Skeptic() {
     e.preventDefault();
     setBusy(true); setError(null); setAnswer(null);
     try {
-      setAnswer(await api.skeptic({ ticker, thesis, lang }));
-      setAsked({ ticker, thesis });
+      setAnswer(await api.skeptic({ ticker, thesis, lang, stance }));
+      setAsked({ ticker, thesis, stance });
       api.skepticStatus().then(setStatus).catch(() => {});
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0;
@@ -108,7 +110,7 @@ export default function Skeptic() {
     if (!asked) return;
     setCreating(true); setError(null);
     try {
-      const m = await api.createMemo({ ticker: asked.ticker, thesis: asked.thesis, lang });
+      const m = await api.createMemo({ ticker: asked.ticker, thesis: asked.thesis, lang, stance: asked.stance });
       rememberMemo({ id: m.id, ticker: m.ticker, thesis: m.thesis, at: m.created_at });
       navigate(`/lab/memo/${m.id}`);
     } catch (err) {
@@ -133,6 +135,14 @@ export default function Skeptic() {
             {tickers.map((x) => <option key={x}>{x}</option>)}
           </select>
         </label>
+        <div className="stance" role="radiogroup" aria-label={t.stanceLabel}>
+          <span className="muted small">{t.stanceLabel}</span>
+          {(["long", "short"] as const).map((s) => (
+            <label key={s}><input type="radio" name="stance" checked={stance === s} disabled={busy}
+                                  onChange={() => setStance(s)} /> {t.stance[s]}</label>
+          ))}
+          {stance === "short" && <span className="muted small">{t.stanceHelp}</span>}
+        </div>
         <label className="thesis">{t.skThesis}
           <textarea value={thesis} maxLength={400} rows={3} placeholder={t.skPlaceholder} disabled={busy}
                     onChange={(e) => setThesis(e.target.value)} />
@@ -165,7 +175,7 @@ export default function Skeptic() {
       {answer?.ok && r && (
         <div className="answer">
           {answer.cached && <p className="muted small">{t.skCached}</p>}
-          <p className="restated"><span className="muted small">{t.skRestated}</span><br />{r.thesis_restated}</p>
+          <p className="restated"><span className="muted small">{t.skRestated}{asked ? ` · ${t.stance[asked.stance]}` : ""}</span><br />{r.thesis_restated}</p>
           <h3>{t.skBear}</h3>
           <ol className="claims">{r.bear_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} bear />)}</ol>
           <h3>{t.skBull}</h3>
