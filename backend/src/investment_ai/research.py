@@ -13,9 +13,9 @@ from .evidence import EvidencePack
 from .ledger import AIRun, BudgetExceeded, Ledger
 from .providers import LLMError, Provider, prices_for
 from .validate import (TOP_FIELDS, ResearchSkeptic, ValidationReport, params_from_text, schema_for_prompt,
-                       validate_output)
+                       to_model_names, validate_output)
 
-PROMPT_VERSION = "research_skeptic_v13"
+PROMPT_VERSION = "research_skeptic_v14"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 LANGUAGES = {"zh": "Simplified Chinese", "en": "English"}
 # Public Lab and its eval use the same settings: latest 5 quarters in the prompt (enough for YoY context,
@@ -42,8 +42,13 @@ _THESIS_TAG = re.compile(r"</?\s*thesis\s*>", re.IGNORECASE)
 
 
 Stance = Literal["long", "short"]
-STANCE_TEXT = {"long": "bullish (the user expects the company to do well)",
-               "short": "bearish (the user expects the company to do worse, and is considering not buying or reducing)"}
+STANCE_TEXT = {"long": "bullish (the user expects the company to do well). counter_arguments are reasons it may do "
+                       "worse than the user expects.",
+               "short": "bearish (the user expects the company to do worse, and is considering not buying or "
+                        "reducing). counter_arguments must be reasons the company may do BETTER than the user expects "
+                        "(for example rising margins, accelerating growth, improving cash flow). Evidence that the "
+                        "company is doing badly supports the user and belongs in supporting_points, never in "
+                        "counter_arguments."}
 
 
 def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh", stance: str = "long") -> str:
@@ -116,7 +121,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
         if report.ok:
             return ResearchResult(ok=True, output=output, report=report, runs=runs)
         user = (base_user + "\n\nYour previous answer failed validation. Fix exactly these problems and "
-                "answer again:\n" + report.feedback())
+                "answer again:\n" + to_model_names(report.feedback()))
 
     # Fail closed: an output that never passed validation is not shown.
     return ResearchResult(ok=False, report=report, runs=runs, error="output failed validation")

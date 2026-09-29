@@ -212,8 +212,9 @@ def test_strict_tool_schema_and_request(monkeypatch):
     for bad in ('"$ref"', '"minItems"', '"maxItems"', '"title"', '"default"', '"anyOf"'):
         assert bad not in text
     assert schema["additionalProperties"] is False
-    bear = schema["properties"]["bear_case"]
+    bear = schema["properties"]["counter_arguments"]  # the model sees neutral names (see MODEL_NAMES)
     assert bear["type"] == "array" and bear["description"] == "exactly 3 items"
+    assert "bear_case" not in schema["properties"] and set(schema["required"]) == set(schema["properties"])
     # Keep the compiled grammar small: each item schema appears once (fixed-key slots made the API reject it).
     assert text.count('"breaks_assumption": {') == 1 and text.count('"observable_metric": {') == 1 and len(text) < 3000
     sent = {}
@@ -535,3 +536,33 @@ def test_advice_in_restated_thesis_gets_specific_feedback(pack):
     out["thesis_restated"] = "Cloud is strong, so investors should buy now."
     _, report = validate_output(out, pack, user_thesis="Cloud is strong. Should I buy more, and how much?")
     assert not report.ok and report.advice_in_restated and "never turn it into a statement" in report.feedback()
+
+
+def test_model_field_names_are_mapped_back(pack):
+    out = good_output(pack)
+    out["counter_arguments"] = out.pop("bear_case")
+    out["supporting_points"] = out.pop("bull_case")
+    obj, report = validate_output(out, pack)
+    assert report.ok and len(obj.bear_case) == 3 and len(obj.bull_case) == 2
+
+
+def test_prompt_table_lists_periods_in_order(pack):
+    first = pack.to_prompt_table("en").splitlines()[0]
+    assert first.startswith("Periods, oldest to newest:")
+    labels = first.split(": ", 1)[1].split(", ")
+    ends = {i.fiscal_label or i.period_end: i.period_end for i in pack.items}
+    assert [ends[x] for x in labels] == sorted(ends[x] for x in labels)
+
+
+@pytest.mark.parametrize("text,bad", [
+    ("Operating margin recovered to 4.2% in FY2026 Q1 from a low of 1.4% in FY2026 Q2.", True),
+    ("Gross margin improved to 21.1% in FY2026 Q1 from 16.8% in FY2026 Q2.", True),
+    ("Capex rose from 23.3% in FY2025 Q2 to 37.5% in FY2026 Q2.", False),
+    ("Revenue rose to $28.24B in FY2026 Q2 from $22.50B in FY2025 Q2.", False),
+    ("营业利润率从FY2026 Q2的1.4%回升至FY2026 Q1的4.2%。", True),
+    ("资本开支占收入比从FY2025 Q2的23.3%升至FY2026 Q2的37.5%。", False),
+    ("Operating income from FY2026 Q2 was high relative to FY2025 Q2.", False),
+])
+def test_period_order(text, bad):
+    from investment_ai.validate import period_order_problems
+    assert bool(period_order_problems(text)) is bad, text

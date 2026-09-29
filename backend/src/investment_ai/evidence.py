@@ -105,7 +105,9 @@ class EvidencePack(BaseModel):
         return fact_id[len(prefix):] if fact_id.startswith(prefix) else fact_id
 
     def to_prompt_table(self, language: str = "zh") -> str:
-        lines = ["fact_id | period | label | value | derived"]
+        order = sorted({(i.period_end, i.fiscal_label or i.period_end) for i in self.items})
+        lines = ["Periods, oldest to newest: " + ", ".join(dict.fromkeys(label_ for _, label_ in order)),
+                 "fact_id | period | label | value | derived"]
         for i in self.items:
             lines.append(f"{self.short_id(i.fact_id)} | {i.fiscal_label or i.period_end} | "
                          f"{label(i.metric, language, i.member)} | {i.display} | {'y' if i.derived else 'n'}")
