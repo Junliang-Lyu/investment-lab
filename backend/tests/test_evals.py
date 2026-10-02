@@ -75,7 +75,7 @@ def test_cli_runs_selected_cases(pack, tmp_path):
                 client=FakeEdgar(), ledger=Ledger(tmp_path / "l.jsonl"))
     latest = json.loads((tmp_path / "latest.json").read_text(encoding="utf-8"))
     assert code == 0 and latest["summary"]["cases"] == 1 and latest["cases"][0]["final_ok"]
-    assert latest["prompt_version"] == "research_skeptic_v14"
+    assert latest["prompt_version"] == "research_skeptic_v16"
 
 
 def test_cli_resumes_after_interruption(pack, tmp_path):
@@ -94,7 +94,7 @@ def test_cli_resumes_after_interruption(pack, tmp_path):
     code = main(["eval-skeptic", "--only", ids, "--out", str(tmp_path), "--resume"], provider=prov,
                 client=FakeEdgar(), ledger=Ledger(tmp_path / "l.jsonl"))
     latest = json.loads((tmp_path / "latest.json").read_text(encoding="utf-8"))
-    assert len(prov.calls) == 1 and latest["complete"] and [c["id"] for c in latest["cases"]] == ids.split(",")
+    assert len([c for c in prov.calls if "summaries" not in c["schema"]["properties"]]) == 1 and latest["complete"] and [c["id"] for c in latest["cases"]] == ids.split(",")
     assert not (tmp_path / "partial.json").exists() and code in (0, 3)
 
 

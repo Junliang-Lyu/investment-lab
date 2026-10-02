@@ -39,8 +39,9 @@ class _Text(HTMLParser):
 
     VOID = ("br", "img", "hr", "meta", "link", "input")
 
-    def __init__(self):
+    def __init__(self, prose_cells: int = 0):
         super().__init__(convert_charrefs=True)
+        self.prose_cells = prose_cells  # >0: keep table cells of at least this many words (press releases lay text out in tables)
         self.parts: list[str] = []
         self.skip = 0
         self.stack: list[bool] = []
@@ -56,7 +57,7 @@ class _Text(HTMLParser):
             self.tables.append({"cells": 0, "parts": []})
         elif tag in ("td", "th") and self.tables:
             self.tables[-1]["cells"] += 1
-            self._out().append(" ")
+            self._out().append("\x00" if self.prose_cells else " ")
         if tag not in self.VOID:
             self.stack.append(hidden)
             self.skip += hidden
@@ -70,9 +71,14 @@ class _Text(HTMLParser):
             self.skip -= self.stack.pop()
         if tag == "table" and self.tables:
             t = self.tables.pop()
-            text = re.sub(r"\s+", " ", "".join(t["parts"])).strip()
+            raw = "".join(t["parts"])
+            text = re.sub(r"\s+", " ", raw.replace("\x00", " ")).strip()
             if len(text) <= 120 and re.match(r"(?i)(?:part\s+[iv]+\s*)?item\s*\d+[a-c]?\b", text):
                 self._out().append("\n" + text + "\n")
+            elif self.prose_cells:
+                for cell in raw.split("\x00"):
+                    if len(re.findall(r"[A-Za-z]{2,}", cell)) >= self.prose_cells:
+                        self._out().append("\n" + cell.strip() + "\n")
             return
         if tag in BLOCK:
             self._out().append("\n")
@@ -82,8 +88,8 @@ class _Text(HTMLParser):
             self._out().append(data)
 
 
-def html_to_text(html: str) -> str:
-    p = _Text()
+def html_to_text(html: str, prose_cells: int = 0) -> str:
+    p = _Text(prose_cells)
     p.feed(html)
     text = "".join(p.parts).replace("\xa0", " ")
     text = re.sub(r"[ \t\r\f\v]+", " ", text)
@@ -123,6 +129,34 @@ def build_passages(html: str, accession: str, url: str | None = None,
         for n, para in enumerate(paragraphs(secs.get(item, "")), 1):
             out.append(Passage(source_id=f"{accession}:{item}:{n}", item=item, text=para, url=url))
     return out
+
+
+def build_release_passages(html: str, accession: str, url: str | None = None, max_paras: int = 60,
+                           min_words: int = 15) -> list[Passage]:
+    """Paragraphs of an earnings press release (8-K exhibit 99): management's own words about the quarter.
+    Tables are skipped, as in the 10-K (numbers come from XBRL)."""
+    text = html_to_text(html, prose_cells=min_words)
+    paras = paragraphs(text, min_words=min_words)[:max_paras]
+    return [Passage(source_id=f"{accession}:ex99:{n}", item="ex99", text=para, url=url) for n, para in enumerate(paras, 1)]
+
+
+def new_risk_passages(new: list[Passage], old: list[Passage], max_n: int = 8, threshold: float = 0.5) -> list[Passage]:
+    """Risk-factor paragraphs of the newest 10-K that have no close match in the prior year's 10-K: risks that are
+    new or reworded. Similarity is the share of a paragraph's distinct words found in the best-matching old one."""
+    old_sets = [set(_tokens(p.text)) for p in old if p.item == "item1a"]
+    out = []
+    for p in new:
+        if p.item != "item1a":
+            continue
+        words = set(_tokens(p.text))
+        if len(words) < 12:
+            continue
+        best = max((len(words & o) / len(words) for o in old_sets), default=0.0)
+        if best < threshold:
+            out.append((best, p))
+    out.sort(key=lambda x: x[0])  # the least similar first
+    return [Passage(source_id=p.source_id.replace(":item1a:", ":item1a_new:"), item="item1a_new", text=p.text, url=p.url)
+            for _, p in out[:max_n]]
 
 
 _WORD = re.compile(r"[a-z0-9]+")

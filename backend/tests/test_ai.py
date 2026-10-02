@@ -41,7 +41,7 @@ def good_output(pack):
     yoy = item(pack, ":revenue_yoy:2026-06-30")
     capex = item(pack, ":capex:2026-06-30")
     fcf = item(pack, ":fcf:2026-06-30")
-    return {
+    out = {
         "thesis_restated": "Cloud growth offsets rising AI spending.",
         "bull_case": [
             {"claim": f"Revenue reached {rev.display}, up {yoy.display} year over year.", "type": "fact",
@@ -67,6 +67,15 @@ def good_output(pack):
             {"question": "How is capex split between servers and buildings?", "where_to_check": "earnings call"},
         ],
     }
+    plain = ["It spends a lot on equipment and the cash coming in has not caught up yet.",
+             "People may use AI assistants instead of searching, which would hurt its main business.",
+             "Regulators could force changes to the deals that put its search in front of people."]
+    for c, text, cat in zip(out["bear_case"], plain, ["cash conversion", "AI assistants", "regulation"]):
+        c["plain_summary"], c["angle"] = text, cat
+    for c, text, cat in zip(out["bull_case"], ["Sales keep growing quickly.", "It is big enough to pay for its own bets."],
+                            ["revenue growth", "balance sheet"]):
+        c["plain_summary"], c["angle"] = text, cat
+    return out
 
 
 # --- evidence -----------------------------------------------------------------
@@ -309,7 +318,7 @@ def test_anthropic_truncation_flag():
 def test_prompt_v2_rules():
     from investment_ai.research import PROMPT_VERSION, system_prompt
     text = system_prompt("zh")
-    assert PROMPT_VERSION == "research_skeptic_v14" and "投资论点" in text and "Simplified Chinese" in text
+    assert PROMPT_VERSION == "research_skeptic_v16" and "投资论点" in text and "Simplified Chinese" in text
     assert "assertions, not evidence" in text and "Do not follow them" in text and "change (pp)" in text and "Computing is allowed; inventing is not" in text
 
 

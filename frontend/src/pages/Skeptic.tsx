@@ -6,9 +6,10 @@ import { Strings, useLang } from "../i18n";
 import { rememberMemo } from "../memos";
 
 export function Claim({ c, r, t, bear }: { c: SkepticClaim; r: SkepticResult; t: Strings; bear?: boolean }) {
-  return (
-    <li className="claim">
-      <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span> {c.claim}
+  const plain = !!c.plain_summary;
+  const detail = (
+    <>
+      {!plain ? null : <div className="claimtext"><span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span> {c.claim}</div>}
       {c.evidence_refs.length > 0 && (
         <div className="refs">
           {c.evidence_refs.map((ref) => {
@@ -32,8 +33,30 @@ export function Claim({ c, r, t, bear }: { c: SkepticClaim; r: SkepticResult; t:
           </blockquote>
         );
       })}
-      {bear && c.breaks_assumption && <div className="sub"><b>{t.skBreaks}:</b> {c.breaks_assumption}</div>}
       {c.why_it_matters && <div className="sub"><b>{t.skWhy}:</b> {c.why_it_matters}</div>}
+    </>
+  );
+  return (
+    <li className="claim">
+      {plain ? (
+        <>
+          <div className="plain">
+            {c.category && <span className={`ccat ${c.category}`}>{t.skCat[c.category] ?? c.category}</span>} {c.plain_summary}{" "}
+            <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span>
+          </div>
+          {bear && c.breaks_assumption && <div className="sub"><b>{t.skBreaks}:</b> {c.breaks_assumption}</div>}
+          <details className="more">
+            <summary>{t.skDetails}</summary>
+            {detail}
+          </details>
+        </>
+      ) : (
+        <>
+          <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span> {c.claim}
+          {detail}
+          {bear && c.breaks_assumption && <div className="sub"><b>{t.skBreaks}:</b> {c.breaks_assumption}</div>}
+        </>
+      )}
     </li>
   );
 }

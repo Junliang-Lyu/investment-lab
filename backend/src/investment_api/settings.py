@@ -32,6 +32,10 @@ class Settings(BaseModel):
     memo_per_ip_daily: int = 10
     memo_review_per_ip_daily: int = 3
     memo_max: int = 5000
+    # Snapshots of companies outside the curated list (any SEC-registered US ticker): bounded per visitor and per day.
+    custom_per_ip_daily: int = 20
+    custom_global_daily: int = 150
+    custom_cache_max: int = 40
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,7 +55,9 @@ class Settings(BaseModel):
                                  ("LAB_MEMO_RETENTION_DAYS", "memo_retention_days", int),
                                  ("LAB_MEMO_PER_IP_DAILY", "memo_per_ip_daily", int),
                                  ("LAB_MEMO_REVIEW_PER_IP_DAILY", "memo_review_per_ip_daily", int),
-                                 ("LAB_MEMO_MAX", "memo_max", int)]:
+                                 ("LAB_MEMO_MAX", "memo_max", int),
+                                 ("LAB_CUSTOM_PER_IP_DAILY", "custom_per_ip_daily", int),
+                                 ("LAB_CUSTOM_GLOBAL_DAILY", "custom_global_daily", int)]:
             if os.environ.get(env):
                 kw[field] = cast(os.environ[env])
         return cls(**kw)

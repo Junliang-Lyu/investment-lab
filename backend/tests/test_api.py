@@ -13,10 +13,16 @@ FIX = Path(__file__).parent / "fixtures" / "edgar"
 
 
 class FakeEdgar:
+    KNOWN = {"GOOG", "GOOGL", "BRK-B", "ORCL"}
+    calls: list = []  # the recorded facts file stands in for every known ticker
+
     def cik_for(self, t):
+        if t not in self.KNOWN and t not in ("MSFT", "AMZN", "META", "NVDA", "TSLA", "MU", "COST", "V"):
+            raise KeyError(t)
         return "0001652044"
 
     def company_facts(self, cik):
+        FakeEdgar.calls.append(cik)
         return json.loads((FIX / "GOOG_companyfacts.json").read_text(encoding="utf-8"))
 
     def filings(self, cik, forms):
@@ -66,7 +72,7 @@ def test_company_snapshot(client):
     assert body["ticker"] == "GOOG" and q["metrics"]["revenue"]["value"] == 119_796e6
     assert q["metrics"]["revenue"]["label"] == "收入" and q["metrics"]["revenue"]["source"].startswith("https://www.sec.gov/")
     assert body["segments"] == []  # fake client has no segment data
-    assert client.get("/api/lab/companies/XYZ/snapshot").status_code == 404
+    assert client.get("/api/lab/companies/XYZ/snapshot").status_code == 404  # not an SEC ticker
 
 
 def test_theses(client):
@@ -112,3 +118,36 @@ def test_snapshot_sec_down_is_503_and_stale_cache_is_served():
     first = c.get("/api/lab/companies/GOOG/snapshot")
     second = c.get("/api/lab/companies/GOOG/snapshot")  # expired, SEC down -> stale copy
     assert first.status_code == 200 and second.status_code == 200 and second.json() == first.json()
+
+
+def test_custom_ticker_snapshot(client):
+    r = client.get("/api/lab/companies/googl/snapshot?lang=en")  # not in the curated list, but a SEC ticker
+    assert r.status_code == 200 and r.json()["ticker"] == "GOOGL"
+    assert client.get("/api/lab/companies/BRK.B/snapshot").json()["ticker"] == "BRK-B"  # dots become dashes
+    assert client.get("/api/lab/companies/not%20a%20ticker/snapshot").status_code in (404, 422)
+    assert client.get("/api/lab/companies/TOOLONGTICKER1/snapshot").status_code == 422
+
+
+def test_custom_ticker_limits_and_disk_cache(tmp_path):
+    cached = tmp_path / "companyfacts_0001652044.json"
+    cached.write_text("{}")
+    c = TestClient(create_app(Settings(rate_per_minute=1000, cache_dir=tmp_path, custom_per_ip_daily=2),
+                              client_factory=FakeEdgar))
+    assert c.get("/api/lab/companies/GOOGL/snapshot").status_code == 200
+    assert not cached.exists()  # custom companies leave nothing in the disk cache
+    assert c.get("/api/lab/companies/GOOGL/snapshot").status_code == 200  # served from memory: not counted
+    assert c.get("/api/lab/companies/BRK-B/snapshot").status_code == 200
+    r = c.get("/api/lab/companies/ORCL/snapshot")  # the third new company from this visitor today
+    assert r.status_code == 429
+    assert c.get("/api/lab/companies/GOOG/snapshot").status_code == 200  # the curated list is not limited
+
+
+def test_custom_ticker_memory_cache_is_bounded():
+    c = TestClient(create_app(Settings(rate_per_minute=1000, custom_cache_max=1), client_factory=FakeEdgar))
+    assert c.get("/api/lab/companies/GOOG/snapshot").status_code == 200  # curated: kept
+    FakeEdgar.calls.clear()
+    for t in ("GOOGL", "ORCL", "GOOGL"):  # ORCL pushes GOOGL out, so the last request builds it again
+        assert c.get(f"/api/lab/companies/{t}/snapshot").status_code == 200
+    assert len(FakeEdgar.calls) == 3
+    FakeEdgar.calls.clear()
+    assert c.get("/api/lab/companies/GOOG/snapshot").status_code == 200 and FakeEdgar.calls == []

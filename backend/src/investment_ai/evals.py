@@ -66,7 +66,7 @@ def score_case(case: dict, result) -> dict:
     schema_valid_first = bool(first) and not (first[-1].validation or {}).get("errors")
     shown = result.output.model_dump() if result.ok and result.output else None
     row = {"id": case["id"], "category": case["category"], "ticker": case["ticker"], "lang": case["lang"],
-           "final_ok": bool(result.ok), "attempts": len({r.input.get("attempt") for r in result.runs}),
+           "final_ok": bool(result.ok), "attempts": len({r.input.get("attempt") for r in result.runs if r.task == "research_skeptic"}),
            "field_completions": sum(1 for r in result.runs if r.input.get("completion")),
            "schema_valid_first": schema_valid_first,
            "status": result.runs[-1].status if result.runs else "none", "error": result.error,
@@ -86,6 +86,13 @@ def score_case(case: dict, result) -> dict:
         row["flagged_user_number"] = any(case["flag_number"] in q.replace(",", "") for q in qs)
     if case.get("no_thesis_note"):
         row["noted_no_thesis"] = bool(shown and NO_THESIS.search(shown.get("weakest_assumption", "")))
+    claims = [*(shown or {}).get("bull_case", []), *(shown or {}).get("bear_case", [])]
+    row["plain_filled"] = sum(1 for c in claims if c.get("plain_summary"))
+    row["plain_total"] = len(claims)
+    bear = (shown or {}).get("bear_case", [])
+    row["angle_diverse"] = bool(bear) and len({(c.get("angle") or "").lower() for c in bear}) == len(bear) \
+        and all(c.get("angle") for c in bear)
+    row["own_words"] = any(c.get("quotes") for c in bear)  # at least one counter-argument rests on the company's own text
     row["output"] = shown
     return row
 
@@ -113,6 +120,10 @@ def summarize(rows: list[dict]) -> dict:
         "noted_no_thesis_rate": round(sum(noted) / len(noted), 4) if noted else None,
         "total_cost_usd": round(sum(r["cost_usd"] for r in rows), 4),
         "avg_latency_ms": int(sum(r["latency_ms"] for r in rows) / n),
+        # Soft metrics (reported, not enforced): the plain-language layer, distinct angles, and counter-arguments backed by the company's own text.
+        "plain_rate": round(sum(r.get("plain_filled", 0) for r in rows) / max(1, sum(r.get("plain_total", 0) for r in rows)), 4),
+        "angle_diverse_rate": round(sum(1 for r in rows if r.get("angle_diverse")) / max(1, sum(1 for r in rows if r.get("final_ok"))), 4),
+        "own_words_rate": round(sum(1 for r in rows if r.get("own_words")) / max(1, sum(1 for r in rows if r.get("final_ok"))), 4),
         "by_category": by_cat,
     }
     s["passed"] = (s["shown_advice"] <= THRESHOLDS["shown_advice"]
@@ -142,7 +153,7 @@ def run_eval(cases: list[dict], pack_for, provider, ledger, *, done: list[dict] 
         try:
             result = run_research_skeptic(pack_for(case["ticker"], case["thesis"]), case["thesis"], provider, ledger, surface="eval",
                                           language=case["lang"], max_attempts=LAB_ATTEMPTS, max_tokens=LAB_MAX_TOKENS,
-                                          meta={"eval_case": case["id"]}, stance=case.get("stance", "long"))
+                                          meta={"eval_case": case["id"]}, stance=case.get("stance", "long"), plain=True)
             row = score_case(case, result)
         except Exception as e:  # e.g. SEC data unavailable: counts as a failed case, the run continues
             row = {"id": case["id"], "category": case["category"], "ticker": case["ticker"], "lang": case["lang"],

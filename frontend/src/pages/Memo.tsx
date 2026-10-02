@@ -189,7 +189,7 @@ export default function MemoPage({ id }: { id: string }) {
         <p className="muted small">{t.mmBHelp}</p>
         {ES.map((e, i) => (
           <div key={e} className="respond">
-            <p><b>{e}.</b> {sk.bear_case[i]?.claim}</p>
+            <p><b>{e}.</b> {sk.bear_case[i]?.plain_summary ?? sk.bear_case[i]?.claim}</p>
             <textarea rows={3} maxLength={1000} value={form.responses[e] ?? ""} placeholder={t.mmBPh}
                       onChange={(ev) => edit({ responses: { ...form.responses, [e]: ev.target.value } })} />
           </div>

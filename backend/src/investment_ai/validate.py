@@ -37,6 +37,20 @@ class Claim(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
     quotes: list[Quote] = Field(default_factory=list)  # verbatim text from filing passages
     why_it_matters: str | None = None  # interpretation; always an inference
+    # Plain-language layer (v15): one jargon-free sentence for non-specialists, and what kind of argument it is.
+    plain_summary: str | None = Field(default=None, description=(
+        "One short sentence in everyday words that a non-specialist understands, without any number or jargon."))
+    angle: str | None = Field(default=None, description=(
+        "A short label (1 to 4 words) for the angle this point looks from, for example competition, cash conversion, "
+        "regulation, supply chain, management."))
+
+    @field_validator("angle", mode="before")
+    @classmethod
+    def _angle(cls, v):
+        if v is None:
+            return None
+        t = " ".join(str(v).split())[:40]
+        return t or None
 
 
 class BearClaim(Claim):
@@ -96,6 +110,9 @@ def strict_schema(model) -> dict:
             out = {**{k: v for k, v in out.items() if k != "anyOf"}, "type": [o["type"] for o in out["anyOf"]]}
         if limits:
             out["description"] = (out.get("description", "") + " Items: " + ", ".join(limits) + ".").strip()
+        if "anyOf" in out and len(out["anyOf"]) == 2 and {"type": "null"} in out["anyOf"]:
+            other = next(o for o in out["anyOf"] if o != {"type": "null"})  # optional enum: leave null out of the schema
+            out = {**{k: v for k, v in out.items() if k != "anyOf"}, **other}
         if out.get("type") == "object":
             out["additionalProperties"] = False
         return out
@@ -125,6 +142,8 @@ def schema_for_prompt() -> dict:
     for field, (lo, hi) in LIST_SLOTS.items():
         count = f"exactly {hi}" if lo == hi else f"{lo} or {hi}"
         schema["properties"][field]["description"] = f"{count} items"
+    for field in ("bull_case", "bear_case"):  # the plain-language layer is a separate call (plain.py)
+        schema["properties"][field]["items"]["properties"].pop("plain_summary", None)
     props = schema["properties"]
     order = ["thesis_restated", "bear_case", "bull_case", "weakest_assumption", "invalidation_suggestions",
              "verify_questions"]
@@ -483,6 +502,8 @@ class ValidationReport(BaseModel):
     bad_quotes: list[str] = Field(default_factory=list)
     echoed: list[str] = Field(default_factory=list)  # code words from instructions hidden in the thesis
     period_order: list[str] = Field(default_factory=list)  # "rose to X in a period from Y in a later period"
+    # Soft (never fails an answer; reported by the eval): the counter-arguments are all about reported numbers.
+    unbalanced: list[str] = Field(default_factory=list)
     advice_in_restated: bool = False  # the thesis's question turned into a statement ("该不该加仓" -> "应该加仓")
     # Not failures: fact claims shown as inference because they contained interpretation or unsupported
     # names, and evidence refs added or corrected by code.
@@ -776,6 +797,36 @@ def _verbatim_prefix(quote: str, passage: str, min_words: int = 8) -> str | None
     return None
 
 
+QUOTE_MAX_WORDS = 60
+
+
+def _shorten_quote(quote: str, limit: int = QUOTE_MAX_WORDS) -> str | None:
+    """A verbatim quote that is too long: keep its beginning up to the last sentence end (or clause break) that fits.
+    A prefix of a verbatim quote is still verbatim."""
+    words = quote.split()
+    if len(words) <= limit:
+        return quote
+    head = words[:limit]
+    ends = [i for i, w in enumerate(head) if re.search(r"[.!?;]$", w) and i + 1 >= 8]
+    if ends:
+        return " ".join(head[:ends[-1] + 1])
+    commas = [i for i, w in enumerate(head) if w.endswith(",") and i + 1 >= 12]
+    cut = head[:commas[-1] + 1] if commas else head
+    return " ".join(cut).rstrip(",;:")
+
+
+def _longest_verbatim_span(quote: str, passage: str, min_words: int = 8) -> str | None:
+    """The longest run of consecutive words of the quote that is word-for-word in the passage. Models often join two
+    sentences of a paragraph or drop a few words in the middle; what is kept is still exactly the filing's text."""
+    words = quote.replace("...", " ").replace("…", " ").split()
+    for n in range(len(words), min_words - 1, -1):
+        for i in range(0, len(words) - n + 1):
+            cand = " ".join(words[i:i + n]).strip(" ,;:")
+            if len(cand.split()) >= min_words and quote_found(cand, passage):
+                return cand
+    return None
+
+
 CONCEPT_PCTS = {0.0, 1.0}
 _REFUTE = re.compile(r"\bnot\b|\bthesis\b|\bclaim(?:ed|s)?\b|\brather than\b|\bversus\b|\bvs\.?|\bcontrar"
                      r"|论点|而非|并非|不是|而不是|远低于|远高于|不符|声称|所说", re.I)
@@ -784,6 +835,35 @@ _REFUTE = re.compile(r"\bnot\b|\bthesis\b|\bclaim(?:ed|s)?\b|\brather than\b|\bv
 def refutes_thesis_number(claim: str, grounded_other: bool) -> bool:
     """A fact claim may name a thesis number only to correct it with evidence ("4.0%, not 25%")."""
     return grounded_other and bool(_REFUTE.search(claim))  # "below 0%", "above 100%" are concepts, not company figures
+
+
+_PLAIN_NUMBER = re.compile(
+    r"\d|百分之|[一二两三四五六七八九十百千万亿半]\s*(?:成|倍|分之|个百分点|亿|万|美元|美金)"
+    r"|\b(?:percent|per cent|percentage points?|billion|million|trillion)\b", re.I)
+PLAIN_MAX_CHARS = 240  # English runs about 6 characters per word; the prompt asks for far less
+
+
+def plain_text_problems(text: str) -> list[str]:
+    """Problems with one plain-language sentence (written by a separate small call, see plain.py). It must carry
+    no figures at all, so it cannot smuggle in an ungrounded number; it is also checked for advice."""
+    t = (text or "").strip()
+    if not t:
+        return ["empty"]
+    out = []
+    if _PLAIN_NUMBER.search(t):
+        out.append("contains a number or figure")
+    if len(t) > PLAIN_MAX_CHARS:
+        out.append(f"longer than {PLAIN_MAX_CHARS} characters")
+    out += [f"advice: {h}" for h in forbidden_hits(t)]
+    return out
+
+
+def balance_notes(obj: "ResearchSkeptic") -> list[str]:
+    """Soft check: the three counter-arguments should look from different angles."""
+    angles = [(c.angle or "").lower() for c in obj.bear_case]
+    if not all(angles):
+        return []
+    return ["counter-arguments repeat the same angle"] if len(set(angles)) < len(angles) else []
 
 
 def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
@@ -806,6 +886,12 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
     canon.update({pack.short_id(i.fact_id).lower(): i.fact_id for i in pack.items})
     auto_refs: list[str] = []
     for c in [*obj.bull_case, *obj.bear_case]:
+        # A filing passage cited like a number ("...:item7:17") is not evidence_refs material: it is dropped from the
+        # refs (the claim loses nothing it did not have; without a quote it is then shown as inference below).
+        passage_refs = [r for r in c.evidence_refs if r not in canon.values() and pack.passage(r) is not None]
+        if passage_refs:
+            auto_refs.append("passage id removed from evidence_refs: " + ", ".join(passage_refs))
+            c.evidence_refs = [r for r in c.evidence_refs if r not in passage_refs]
         fixed = [canon.get(r.lower(), r) for r in c.evidence_refs]
         auto_refs += [f"{r} -> {f}" for r, f in zip(c.evidence_refs, fixed) if r.lower() != f.lower()
                       and pack.short_id(f).lower() != r.lower()]
@@ -827,12 +913,18 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
             p = pack.passage(q.source_id)
             if p is not None and not quote_found(q.text, p.text):
                 # A spliced quote ("...", or text that runs past the sentence): keep its verbatim beginning.
-                cut = _verbatim_prefix(q.text, p.text)
+                cut = max(filter(None, [_verbatim_prefix(q.text, p.text), _longest_verbatim_span(q.text, p.text)]),
+                          key=lambda c: len(c.split()), default=None)
                 if cut:
                     auto_refs.append(f"quote trimmed: {q.text[:40]}…")
                     q.text = cut
+            if p is not None and len(q.text.split()) > QUOTE_MAX_WORDS and quote_found(q.text, p.text):
+                shorter = _shorten_quote(q.text)
+                if shorter and quote_found(shorter, p.text):
+                    auto_refs.append(f"quote shortened: {q.text[:40]}…")
+                    q.text = shorter
             words = len(q.text.split())
-            if p is None or not quote_found(q.text, p.text) or not (5 <= words <= 60):
+            if p is None or not quote_found(q.text, p.text) or not (5 <= words <= QUOTE_MAX_WORDS):
                 bad_quotes.append(f"[{q.source_id}] {q.text[:60]}")
             else:
                 good_quotes.append(q.text)
@@ -958,6 +1050,7 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
     order = [p for c in [*obj.bull_case, *obj.bear_case] for p in period_order_problems(c.claim)]
     order += [p for t in _free_texts(obj) for p in period_order_problems(t)]
     report = ValidationReport(ok=not (ungrounded or forbidden or bad_refs or mislabeled or bad_quotes or echoed or order),
+                              unbalanced=balance_notes(obj),
                               echoed=echoed, period_order=order, advice_in_restated=restated_advice,
                               ungrounded=sorted(set(ungrounded)), forbidden=sorted(set(forbidden)),
                               bad_refs=bad_refs, mislabeled=mislabeled, bad_quotes=bad_quotes,

@@ -22,6 +22,8 @@ from .research import LAB_PERIODS
 log = logging.getLogger("investment_ai.lab_pack")
 
 LAB_PASSAGES = 12  # about 2-3k prompt tokens
+LAB_RELEASE = 3    # plus up to this many press-release paragraphs (management's words about the latest quarter)
+LAB_NEW_RISKS = 3  # and this many risk paragraphs that are new or reworded since the prior year
 BASE_TERMS = ["capital expenditures", "competition", "artificial intelligence", "regulatory", "demand",
               "depreciation", "operating loss"]
 # Chinese theses cannot be matched against English filings directly; common investment words are mapped.
@@ -43,6 +45,8 @@ class LabCompany(BaseModel):
     ticker: str
     pack: EvidencePack           # numbers only, latest LAB_PERIODS quarters
     passages: list[Passage] = []  # every narrative paragraph from the latest 10-K and 10-Q
+    release: list[Passage] = []   # paragraphs of the latest earnings press release (8-K exhibit 99)
+    new_risks: list[Passage] = []  # risk-factor paragraphs that are new or reworded since the prior year's 10-K
     members: list[str] = []       # segment names, used as retrieval terms
 
 
@@ -63,24 +67,41 @@ def load_lab_company(client, ticker: str) -> LabCompany:
         passages = load_passages(client, cik)
     except Exception as e:  # filing text is optional; the answer then uses numbers only
         log.info("%s: no filing text: %s", ticker, e)
+    release: list[Passage] = []
+    new_risks: list[Passage] = []
+    try:
+        from investment_data.filing_text import load_new_risks, load_release_passages
+        release = load_release_passages(client, cik)
+        new_risks = load_new_risks(client, cik, passages)
+    except Exception as e:  # optional extras: the answer then uses the 10-K and 10-Q only
+        log.info("%s: no press release / risk-factor changes: %s", ticker, e)
     members = sorted({member_label(m) for (_, m) in (series or {})})
     pack = build_evidence(ticker, fin, series).recent(LAB_PERIODS)
-    return LabCompany(ticker=ticker.upper(), pack=pack, passages=passages, members=members)
+    return LabCompany(ticker=ticker.upper(), pack=pack, passages=passages, members=members, release=release,
+                      new_risks=new_risks)
 
 
-def thesis_terms(thesis: str, members: list[str]) -> list[str]:
+def thesis_terms(thesis: str, members: list[str], angles: list[str] | tuple = ()) -> list[str]:
     words = [w for w in re.findall(r"[A-Za-z][A-Za-z0-9&\-]+", thesis) if w.lower() not in STOP and len(w) > 2]
     zh = [en for key, en in ZH_TERMS.items() if key in thesis]
     seen, out = set(), []
-    for term in [*words, *zh, *members, *BASE_TERMS]:
+    from .angles import retrieval_terms
+    chosen = [t for a in angles for t in retrieval_terms(a)]
+    zh += [en for a in angles for key, en in ZH_TERMS.items() if key in a]
+    for term in [*words, *zh, *chosen, *members, *BASE_TERMS]:
         if term.lower() not in seen:
             seen.add(term.lower())
             out.append(term)
     return out
 
 
-def lab_pack(company: LabCompany, thesis: str) -> EvidencePack:
-    """Numbers plus the paragraphs most relevant to this thesis (deterministic for a given thesis)."""
-    chosen = retrieve_diverse(company.passages, thesis_terms(thesis, company.members), k=LAB_PASSAGES) \
-        if company.passages else []
+def lab_pack(company: LabCompany, thesis: str, angles: list[str] | tuple = ()) -> EvidencePack:
+    """Numbers plus the paragraphs most relevant to this thesis (deterministic for a given thesis): the best matches
+    from the 10-K and 10-Q, the best matches from the latest earnings release, and the newest risk factors."""
+    terms = thesis_terms(thesis, company.members, angles)
+    chosen = retrieve_diverse(company.passages, terms, k=LAB_PASSAGES) if company.passages else []
+    chosen += retrieve_diverse(company.release, terms, k=LAB_RELEASE, per_term=1) if company.release else []
+    seen = {p.text[:200] for p in chosen}
+    new = [p for p in company.new_risks if p.text[:200] not in seen]
+    chosen += retrieve_diverse(new, terms, k=LAB_NEW_RISKS, per_term=1) if new else []
     return company.pack.model_copy(update={"passages": chosen})

@@ -22,6 +22,7 @@ export type Snapshot = {
 export type SkepticClaim = {
   claim: string; type: "fact" | "inference" | "to_verify"; evidence_refs: string[];
   quotes: { source_id: string; text: string }[]; why_it_matters: string | null; breaks_assumption?: string;
+  plain_summary?: string | null; category?: "financial" | "business" | "risk" | null;
 };
 export type SkepticResult = {
   thesis_restated: string; bull_case: SkepticClaim[]; bear_case: SkepticClaim[]; weakest_assumption: string;

@@ -309,6 +309,21 @@ def test_spliced_quote_is_trimmed_to_its_verbatim_start(pack):
     assert not validate_output(out, pk)[1].ok  # nothing verbatim to keep
 
 
+def test_overlong_verbatim_quote_is_shortened_to_a_sentence(pack):
+    from investment_core.filing_text import Passage
+    s1 = "The company entered into guarantees to support the buildout of a large campus covering many leases."
+    s2 = " ".join(["The campus will host compute under long leases with limited exceptions and capped obligations"] * 1)
+    text = f"{s1} {s2} " + " ".join(f"word{i}" for i in range(60)) + "."
+    p = Passage(source_id="acc:item2_10q:2", item="item2_10q", text=text, url=None)
+    pk = pack.model_copy(update={"passages": [p]})
+    out = good_output(pk)
+    out["bull_case"][1]["quotes"] = [{"source_id": "acc:item2_10q:2", "text": text}]
+    obj, report = validate_output(out, pk)
+    q = obj.bull_case[1].quotes[0].text
+    assert report.ok and len(q.split()) <= 60 and q in text and q.endswith(".")
+    assert any("quote shortened" in a for a in report.auto_refs)
+
+
 def test_computed_numbers_are_rechecked(pack):
     capex = item(pack, ":capex:2026-06-30"); rev = item(pack, ":revenue:2026-06-30")
     share = capex.value / rev.value
@@ -566,3 +581,112 @@ def test_prompt_table_lists_periods_in_order(pack):
 def test_period_order(text, bad):
     from investment_ai.validate import period_order_problems
     assert bool(period_order_problems(text)) is bad, text
+
+
+# --- plain-language layer (v15): written by a separate call, see test_plain.py -------------
+
+import pytest as _pytest
+from investment_ai.validate import plain_text_problems, schema_for_prompt
+
+
+def test_plain_summary_is_not_in_the_model_schema():
+    schema = schema_for_prompt()
+    for field in ("counter_arguments", "supporting_points"):
+        props = schema["properties"][field]["items"]["properties"]
+        assert "plain_summary" not in props and "angle" in props
+
+
+@_pytest.mark.parametrize("text,bad", [
+    ("It spends a lot on equipment and the cash coming in has not caught up yet.", False),
+    ("它花钱买设备越来越猛，但赚回来的现金还没跟上。", False),
+    ("Spending is 39.8% of sales.", True),
+    ("资本开支占了收入的百分之四十。", True),
+    ("它把赚到的钱的三成花在设备上。", True),
+    ("It lost about three percent of its customers.", True),
+    ("You should buy more on this dip.", True),
+    ("", True),
+    ("word " * 80, True),
+])
+def test_plain_text_problems(text, bad):
+    assert bool(plain_text_problems(text)) is bad, text
+
+
+def test_english_plain_summary_of_normal_length_passes():
+    text = ("It keeps spending heavily on data centers and chips, and the cash coming in has not caught up yet, "
+            "so there is less money left over for everything else, including the parts of the business that pay the bills today.")
+    assert 160 < len(text) < 240 and not plain_text_problems(text)
+
+
+def test_repeated_angles_are_reported_but_do_not_fail(pack):
+    out = good_output(pack)
+    for c in out["bear_case"]:
+        c["angle"] = "Cash flow"
+    obj, report = validate_output(out, pack)
+    assert report.ok and report.unbalanced == ["counter-arguments repeat the same angle"]
+    out["bear_case"][1]["angle"] = "competition"
+    out["bear_case"][2]["angle"] = "regulation"
+    assert validate_output(out, pack)[1].unbalanced == []
+    for c in out["bear_case"]:
+        c.pop("angle")
+    assert validate_output(out, pack)[1].unbalanced == []  # a missing angle is not a failure either
+
+
+def test_angle_label_is_cleaned(pack):
+    out = good_output(pack)
+    out["bear_case"][0]["angle"] = "  a   very " + "long " * 30
+    obj, _ = validate_output(out, pack)
+    assert len(obj.bear_case[0].angle) <= 40 and "  " not in obj.bear_case[0].angle
+
+
+def test_passage_id_in_evidence_refs_is_dropped_and_the_claim_becomes_inference(pack):
+    from investment_core.filing_text import Passage
+    p = Passage(source_id="acc:item7:9", item="item7", url="https://example/10k.htm",
+                text="Management expects capital expenditures to remain elevated in the coming years.")
+    pk = pack.model_copy(update={"passages": [p]})
+    out = good_output(pack)
+    out["bear_case"][1] = {"claim": "Management expects spending to stay high.", "type": "fact",
+                           "evidence_refs": ["acc:item7:9"], "breaks_assumption": "Spending is temporary"}
+    obj, report = validate_output(out, pk)
+    assert report.ok and not report.bad_refs
+    assert obj.bear_case[1].evidence_refs == [] and obj.bear_case[1].type == "inference"
+    assert any("passage id removed" in a for a in report.auto_refs)
+    # an id that is neither evidence nor a passage is still an error
+    out["bear_case"][1]["evidence_refs"] = ["acc:item7:99"]
+    assert validate_output(out, pk)[1].bad_refs
+
+
+PASSAGE = ("Governments in a number of jurisdictions shield domestic payments providers, including card networks, brands, "
+           "and processors, from international competition by imposing market access barriers and preferential domestic "
+           "regulations. To varying degrees, these policies and regulations affect the terms of competition in the marketplace.")
+
+
+@pytest.mark.parametrize("quote,expect_kept", [
+    # words dropped from the middle of a sentence: the longest verbatim run is kept
+    ("Governments in a number of jurisdictions shield domestic payments providers from international competition by "
+     "imposing market access barriers and preferential domestic regulations.",
+     "from international competition by imposing market access barriers and preferential domestic regulations"),
+    # two sentences joined with a made-up bridge: the longer true run is kept
+    ("These policies and regulations affect the terms of competition in the marketplace and also hurt margins badly "
+     "everywhere. To varying degrees, these policies and regulations affect the terms of competition in the marketplace.",
+     "To varying degrees, these policies and regulations affect the terms of competition in the marketplace"),
+])
+def test_quote_is_trimmed_to_its_longest_verbatim_run(pack, quote, expect_kept):
+    from investment_core.filing_text import Passage, quote_found
+    p = Passage(source_id="acc:item1a:1", item="item1a", text=PASSAGE, url=None)
+    pk = pack.model_copy(update={"passages": [p]})
+    out = good_output(pk)
+    out["bull_case"][1]["quotes"] = [{"source_id": p.source_id, "text": quote}]
+    obj, report = validate_output(out, pk)
+    kept = obj.bull_case[1].quotes[0].text
+    assert report.ok and kept.rstrip(".") == expect_kept and quote_found(kept, PASSAGE)
+    assert any("quote trimmed" in a for a in report.auto_refs)
+
+
+def test_invented_quote_is_still_rejected(pack):
+    from investment_core.filing_text import Passage
+    p = Passage(source_id="acc:item1a:1", item="item1a", text=PASSAGE, url=None)
+    pk = pack.model_copy(update={"passages": [p]})
+    out = good_output(pk)
+    out["bull_case"][1]["quotes"] = [{"source_id": p.source_id, "text":
+                                      "Our largest customers may terminate their agreements at any time without notice or penalty."}]
+    assert validate_output(out, pk)[1].bad_quotes

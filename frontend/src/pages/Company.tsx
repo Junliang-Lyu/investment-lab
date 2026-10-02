@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, Snapshot } from "../api";
 import { metric, pct, usd } from "../format";
 import { navigate } from "../App";
@@ -21,6 +21,13 @@ export default function Company() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [other, setOther] = useState("");
+  const curated = tickers.length === 0 || tickers.includes(ticker);
+  const loadOther = (e: FormEvent) => {
+    e.preventDefault();
+    const v = other.trim().toUpperCase().replace(".", "-");
+    if (/^[A-Z][A-Z\-]{0,9}$/.test(v)) { setTicker(v); setOther(""); }
+  };
 
   useEffect(() => { api.companies().then((c) => setTickers(c.map((x) => x.ticker))).catch(() => setTickers(["GOOG"])); }, []);
   useEffect(() => {
@@ -45,12 +52,18 @@ export default function Company() {
       <div className="toolbar">
         <label>{t.company}{" "}
           <select value={ticker} onChange={(e) => setTicker(e.target.value)}>
-            {tickers.map((t) => <option key={t}>{t}</option>)}
+            {[...tickers, ...(curated ? [] : [ticker])].map((t) => <option key={t}>{t}</option>)}
           </select>
         </label>
+        <form className="inline" onSubmit={loadOther}>
+          <input value={other} onChange={(e) => setOther(e.target.value)} placeholder={t.customPlaceholder}
+                 aria-label={t.customLabel} maxLength={10} size={12} />{" "}
+          <button type="submit" className="secondary">{t.customGo}</button>
+        </form>
         {data && <span className="muted">{data.company} · CIK {data.cik}</span>}
-        <button type="button" className="secondary" onClick={() => navigate("/lab/skeptic", { ticker })}>{t.snapNext(ticker)} →</button>
+        {curated && <button type="button" className="secondary" onClick={() => navigate("/lab/skeptic", { ticker })}>{t.snapNext(ticker)} →</button>}
       </div>
+      {!curated && <p className="muted small">{t.customNote(ticker)}</p>}
       {loading && <p className="muted">{t.loadingFilings}</p>}
       {error && <p className="error">{error}</p>}
       {data && (

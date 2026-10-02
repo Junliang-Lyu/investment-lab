@@ -25,6 +25,7 @@ from typing import Callable, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from investment_ai.angles import AngleError, normalize_angles
 from investment_ai.evidence import ITEM_NAMES, label
 from investment_ai.lab_pack import LabCompany, lab_pack, load_lab_company
 from investment_ai.ledger import AIRun, BudgetExceeded
@@ -141,10 +142,12 @@ class SkepticRequest(BaseModel):
     thesis: str = Field(min_length=10, max_length=400)
     lang: Literal["zh", "en"] = "en"
     stance: Literal["long", "short"] = "long"  # bullish or bearish thesis; the skeptic argues the other way
+    angles: list[str] = Field(default_factory=list, max_length=4)  # optional focus angles (investment_ai.angles)
 
 
-def cache_key(ticker: str, lang: str, thesis: str, stance: str = "long") -> str:
-    return hashlib.sha256(f"{ticker}|{lang}|{stance}|{thesis.lower()}|{PROMPT_VERSION}".encode()).hexdigest()
+def cache_key(ticker: str, lang: str, thesis: str, stance: str = "long", angles: list[str] | tuple = ()) -> str:
+    chosen = "|".join(sorted(a.lower() for a in angles))
+    return hashlib.sha256(f"{ticker}|{lang}|{stance}|{thesis.lower()}|{chosen}|{PROMPT_VERSION}".encode()).hexdigest()
 
 
 def render(output: dict, pack, lang: str) -> dict:
@@ -223,7 +226,11 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
         thesis = normalize_thesis(req.thesis)
         if len(thesis) < 10:
             raise HTTPException(422, "thesis is too short")
-        ip_hash, key, now = visitor(request), cache_key(ticker, req.lang, thesis, req.stance), store.clock()
+        try:
+            angles = normalize_angles(req.angles)
+        except AngleError as e:
+            raise HTTPException(422, str(e))
+        ip_hash, key, now = visitor(request), cache_key(ticker, req.lang, thesis, req.stance, angles), store.clock()
         base = dict(id=uuid.uuid4().hex, at=now.isoformat(), ip_hash=ip_hash, ticker=ticker, lang=req.lang,
                     thesis=thesis, cache_key=key)
 
@@ -232,7 +239,7 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
             store.add_request(**base, cached=1, status="ok", cost=0.0, attempts=0, model=hit["model"],
                               prompt_version=hit["prompt_version"], output=json.dumps(hit["output"]))
             try:
-                pack = lab_pack(load_company(ticker), thesis)
+                pack = lab_pack(load_company(ticker), thesis, angles)
             except Exception:  # the answer can still be shown without source links
                 pack = None
             return {"ok": True, "cached": True, "result": render(hit["output"], pack, req.lang),
@@ -245,7 +252,7 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
             raise HTTPException(503, "Today's AI budget for the Lab is used up. Please try again tomorrow.")
 
         try:
-            pack = lab_pack(load_company(ticker), thesis)
+            pack = lab_pack(load_company(ticker), thesis, angles)
         except HTTPException:
             raise
         except Exception as e:
@@ -254,13 +261,14 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
 
         with model_lock:  # one model call at a time keeps spending and memory predictable
             result = run_research_skeptic(pack, thesis, provider_factory(), store, surface="lab", language=req.lang,
-                                          stance=req.stance,
+                                          stance=req.stance, plain=True, angles=angles,
                                           max_attempts=LAB_ATTEMPTS, max_tokens=LAB_MAX_TOKENS)
         cost = sum(run.cost_usd for run in result.runs)
-        last = result.runs[-1] if result.runs else None
+        main_runs = [r for r in result.runs if r.task == "research_skeptic"]
+        last = main_runs[-1] if main_runs else None
         status_ = ("ok" if result.ok else last.status if last and last.status in ("budget_blocked", "error")
                    else "invalid")
-        store.add_request(**base, cached=0, status=status_, cost=cost, attempts=len(result.runs),
+        store.add_request(**base, cached=0, status=status_, cost=cost, attempts=sum(1 for r in result.runs if r.task == "research_skeptic"),
                           model=last.model if last else None, prompt_version=PROMPT_VERSION,
                           output=json.dumps(result.output.model_dump()) if result.ok else None,
                           validation=result.report.model_dump_json() if result.report else None,
@@ -272,13 +280,13 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
             raise HTTPException(502, "The AI model is unavailable right now. Please try again later.")
         if not result.ok:
             rep = result.report
-            return {"ok": False, "cached": False, "attempts": len(result.runs),
+            return {"ok": False, "cached": False, "attempts": sum(1 for r in result.runs if r.task == "research_skeptic"),
                     "checks": {"advice": len(rep.forbidden) if rep else 0,
                                "ungrounded_numbers": len(rep.ungrounded) if rep else 0,
                                "other": (len(rep.bad_refs) + len(rep.mislabeled) + len(rep.bad_quotes) + len(rep.errors)
                                          + len(rep.echoed))
                                if rep else 0}}
-        return {"ok": True, "cached": False, "attempts": len(result.runs),
+        return {"ok": True, "cached": False, "attempts": sum(1 for r in result.runs if r.task == "research_skeptic"),
                 "result": {**render(result.output.model_dump(), pack, req.lang),
                            "computed": result.report.computed if result.report else []},
                 "model": last.model if last else None, "prompt_version": PROMPT_VERSION}

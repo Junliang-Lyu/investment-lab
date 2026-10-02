@@ -70,7 +70,9 @@ class EvidenceItem(BaseModel):
 
 
 ITEM_NAMES = {"item1": "10-K Item 1 Business", "item1a": "10-K Item 1A Risk Factors",
-              "item7": "10-K Item 7 MD&A", "item2_10q": "10-Q Item 2 MD&A"}
+              "item7": "10-K Item 7 MD&A", "item2_10q": "10-Q Item 2 MD&A",
+              "ex99": "Earnings press release (8-K exhibit 99)",
+              "item1a_new": "10-K Item 1A Risk Factors (new or reworded since the prior year)"}
 
 
 class EvidencePack(BaseModel):

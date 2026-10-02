@@ -207,6 +207,7 @@ def test_bearish_thesis_flows_through(tmp_path, pack):
     m = c.put(f"/api/lab/memos/{m['id']}/answers", json={**ANSWERS, "target_weight_pct": 0}).json()
     assert m["status"] == "user_responded" and m["answers"]["target_weight_pct"] == 0
     c.post(f"/api/lab/memos/{m['id']}/review")
-    assert "Thesis direction: bearish" in prov.fake.calls[1]["user"]
+    main_calls = [c for c in prov.fake.calls if "summaries" not in c["schema"].get("properties", {})]
+    assert "Thesis direction: bearish" in main_calls[1]["user"]
     pm = parse_memo(c.get(f"/api/lab/memos/{m['id']}/markdown").text)
     assert pm.stance == "short" and pm.target_weight == 0

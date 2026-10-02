@@ -157,6 +157,15 @@ class FakeProvider:
 
     def complete_json(self, system: str, user: str, schema: dict, max_tokens: int, strict: bool = False) -> LLMResult:
         self.calls.append({"system": system, "user": user, "schema": schema, "max_tokens": max_tokens})
+        if "summaries" in schema.get("properties", {}):
+            # The plain-language call (plain.py) is optional: unless a test queued summaries for it, it gets none
+            # and the queue meant for the main calls stays untouched.
+            if self.responses and isinstance(self.responses[0], dict) and "summaries" in self.responses[0]:
+                data = self.responses.pop(0)
+            else:
+                data = {"summaries": []}
+            return LLMResult(provider=self.name, model=self.model, data=data, tokens_in=len(user) // 4,
+                             tokens_out=50, latency_ms=1)
         if not self.responses:
             raise LLMError("fake provider has no more responses")
         return LLMResult(provider=self.name, model=self.model, data=self.responses.pop(0),

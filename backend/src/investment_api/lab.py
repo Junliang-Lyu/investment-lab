@@ -20,6 +20,7 @@ from investment_core.models import Asset, AssetType, Sleeve, TradeProposal
 from investment_core.segments import member_label, segment_series
 
 from .i18n import translate_findings, translate_gate
+from .ratelimit import RateLimiter
 
 log = logging.getLogger("investment_api.lab")
 
@@ -143,26 +144,62 @@ def build_router(settings, client_factory, provider_factory=None) -> APIRouter:
     def companies():
         return [{"ticker": t} for t in settings.curated]
 
+    custom_use: dict = {"day": "", "total": 0, "ips": {}}
+    custom_keys: list[str] = []  # snapshot cache keys of non-curated companies, oldest first
+
+    def _custom_allowed(ip: str) -> bool:
+        """Counts cold builds of non-curated companies (each costs SEC traffic and memory). In memory only."""
+        from datetime import datetime, timezone
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if custom_use["day"] != day:
+            custom_use.update(day=day, total=0, ips={})
+        who = RateLimiter.key(f"{day}:{ip}")
+        if custom_use["total"] >= settings.custom_global_daily or custom_use["ips"].get(who, 0) >= settings.custom_per_ip_daily:
+            return False
+        custom_use["total"] += 1
+        custom_use["ips"][who] = custom_use["ips"].get(who, 0) + 1
+        return True
+
     @r.get("/companies/{ticker}/snapshot")
-    def snapshot(ticker: str, lang: Literal["zh", "en"] = Query("en")):
-        t = ticker.upper()
-        if t not in settings.curated:
-            raise HTTPException(404, "not in the Lab company list")
+    def snapshot(ticker: str, request: Request, lang: Literal["zh", "en"] = Query("en")):
+        t = ticker.upper().replace(".", "-")  # SEC lists class shares as BRK-B
+        if not TICKER.match(t):
+            raise HTTPException(422, "invalid ticker")
+        custom = t not in settings.curated
         key = f"{t}:{lang}"
         hit = cache.get(key)
         if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
             return hit[1]
+        if custom:
+            ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+                request.client.host if request.client else "?")
+            if not _custom_allowed(ip):
+                raise HTTPException(429, "Too many companies looked up today. Try one of the listed companies, or come back tomorrow.")
         with fetch_lock:  # one cold build at a time: bounds memory (~100 MB each) and SEC traffic
             hit = cache.get(key)
             if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
                 return hit[1]
-            return _build_snapshot(t, lang, key, hit)
+            try:
+                return _build_snapshot(t, lang, key, hit, custom)
+            finally:
+                if custom:
+                    if key in cache and key not in custom_keys:
+                        custom_keys.append(key)
+                    while len(custom_keys) > settings.custom_cache_max:
+                        cache.pop(custom_keys.pop(0), None)
 
-    def _build_snapshot(t: str, lang: str, key: str, hit):
+    def _build_snapshot(t: str, lang: str, key: str, hit, custom: bool = False):
+        cik = None
         try:
             client = client_factory()
-            cik = client.cik_for(t)
+            try:
+                cik = client.cik_for(t)
+            except KeyError:
+                raise HTTPException(404, f"{t} was not found among SEC-registered tickers. The Lab covers US-listed "
+                                         "companies that file with the SEC.")
             fin = build_financials(client.company_facts(cik), quarters=8)
+        except HTTPException:
+            raise
         except Exception as e:  # SEC unreachable, rate-limited or misconfigured
             log.warning("snapshot %s: SEC fetch failed: %s", t, e)
             if hit:  # a stale snapshot beats an error page
@@ -199,6 +236,12 @@ def build_router(settings, client_factory, provider_factory=None) -> APIRouter:
                 "note": "公司合计数来自 SEC XBRL 申报文件；推导值由已披露数字计算得出。" if lang == "zh" else
                 "Company totals from SEC XBRL filings. Derived values are computed from reported figures."}
         cache[key] = (time.monotonic(), body)
+        if custom and cik:  # keep the disk cache for the curated list only: a visitor could otherwise fill it
+            for f in settings.cache_dir.glob(f"*{cik}*"):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
         return body
 
     @r.get("/theses/{ticker}")

@@ -30,7 +30,7 @@ T = {
         "s8_ai": "AI 建议（仅供参考，请用你自己的话写）：", "s9": "## 9. 待验证问题（需回原始资料）",
         "s10": "## 10. 对反方的回应 §B（用户填写）", "s11": "## 11. 复盘日期 §D（用户填写）",
         "s12": "## 12. 状态", "appendix": "## 附录：证据来源与 AI 调用记录",
-        "breaks": "如果成立，失效的假设", "respond": "我的回应：", "where": "查哪里",
+        "breaks": "如果成立，失效的假设", "plain": "一句话版", "respond": "我的回应：", "where": "查哪里",
         "reasons": "我考虑配置这个标的，是因为：", "target": "目标仓位占净值：____%",
         "review": "下次复盘日期：", "focus": "复盘重点：",
         "checklist": ["[x] Step 1 一句话论点", "[ ] Step 2 业务说明", "[x] Step 3 证据整理（AI）",
@@ -48,7 +48,7 @@ T = {
         "s8_ai": "AI suggestions (reference only; write your own):", "s9": "## 9. Questions to verify in primary sources",
         "s10": "## 10. Responses to the counter-arguments §B (user)", "s11": "## 11. Review date §D (user)",
         "s12": "## 12. Status", "appendix": "## Appendix: evidence and AI run record",
-        "breaks": "Assumption that fails if this holds", "respond": "My response:", "where": "Where to check",
+        "breaks": "Assumption that fails if this holds", "plain": "In plain words", "respond": "My response:", "where": "Where to check",
         "reasons": "I am considering this because:", "target": "Target weight of net value: ____%",
         "review": "Next review date:", "focus": "Review focus:",
         "checklist": ["[x] Step 1 thesis", "[ ] Step 2 business", "[x] Step 3 evidence (AI)",
@@ -114,6 +114,8 @@ def render_memo(ticker: str, thesis: str, fin: CompanyFinancials, pack: Evidence
     L += ["", t["s5"], ""]
     for i, c in enumerate(result.bear_case, 1):
         L.append(f"**E{i}. [{labels[c.type]}] {c.claim}**{_refs(c.evidence_refs, pack, language)}")
+        if c.plain_summary:
+            L.append(f"- {t['plain']}: {c.plain_summary}")
         L += _quote_lines(c, pack, language, "")
         if c.why_it_matters:
             L.append(f"- [{labels['inference']}] {c.why_it_matters}")

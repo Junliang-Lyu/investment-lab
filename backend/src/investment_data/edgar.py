@@ -112,6 +112,7 @@ class EdgarClient:
             if form in forms:
                 out.append({"form": form, "accession": r["accessionNumber"][i], "filed": r["filingDate"][i],
                             "report_date": r["reportDate"][i],
+                            "items": (r.get("items") or [""] * len(r["form"]))[i],  # 8-K item numbers, e.g. "2.02,9.01"
                             "primary_document": (r.get("primaryDocument") or [""] * len(r["form"]))[i]})
         return out
 

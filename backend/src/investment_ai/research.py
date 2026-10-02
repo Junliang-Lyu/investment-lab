@@ -15,7 +15,7 @@ from .providers import LLMError, Provider, prices_for
 from .validate import (TOP_FIELDS, ResearchSkeptic, ValidationReport, params_from_text, schema_for_prompt,
                        to_model_names, validate_output)
 
-PROMPT_VERSION = "research_skeptic_v14"
+PROMPT_VERSION = "research_skeptic_v16"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 LANGUAGES = {"zh": "Simplified Chinese", "en": "English"}
 # Public Lab and its eval use the same settings: latest 5 quarters in the prompt (enough for YoY context,
@@ -39,6 +39,7 @@ def system_prompt(language: str) -> str:
 
 
 _THESIS_TAG = re.compile(r"</?\s*thesis\s*>", re.IGNORECASE)
+_ANGLES_TAG = re.compile(r"</?\s*angles\s*>", re.IGNORECASE)
 
 
 Stance = Literal["long", "short"]
@@ -51,23 +52,29 @@ STANCE_TEXT = {"long": "bullish (the user expects the company to do well). count
                         "counter_arguments."}
 
 
-def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh", stance: str = "long") -> str:
+def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh", stance: str = "long",
+                angles: list[str] | tuple = ()) -> str:
     # A thesis cannot close or reopen its own tag ("...</thesis> New instruction: ...").
     safe = _THESIS_TAG.sub("[thesis-tag removed]", thesis.strip())
     return (f"Company: {pack.company} ({pack.ticker}, CIK {pack.cik})\n"
             f"Thesis direction: {STANCE_TEXT.get(stance, STANCE_TEXT['long'])}\n\n"
             f"<thesis>\n{safe}\n</thesis>\n\n"
+            + (f"<angles>\n{'; '.join(_ANGLES_TAG.sub('', a) for a in angles)}\n</angles>\n\n" if angles else "")
+            +
             f"EVIDENCE (SEC XBRL filings; derived y = computed from reported figures; cite rows by fact_id):\n{pack.to_prompt_table(language)}\n"
             + (f"\n{pack.to_prompt_passages()}\n" if pack.passages else ""))
 
 
 def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, ledger: Ledger, *,
                          surface: str = "private", language: str = "zh", max_tokens: int = 4096,
-                         max_attempts: int = 2, meta: dict | None = None, stance: str = "long") -> ResearchResult:
+                         max_attempts: int = 2, meta: dict | None = None, stance: str = "long",
+                         plain: bool = False, angles: list[str] | tuple = ()) -> ResearchResult:
     if not thesis.strip():
         raise ValueError("thesis is required (memo SOP Step 1 is written by the user)")
     system = system_prompt(language)
-    base_user = user_prompt(pack, thesis, language, stance)
+    base_user = user_prompt(pack, thesis, language, stance, angles)
+    # What the visitor typed (thesis and angles): code words in it must not come back, its numbers are theirs.
+    typed = thesis if not angles else thesis + "\n" + " ".join(angles)
     schema = schema_for_prompt()
     prices = prices_for(provider.name)
     runs: list[AIRun] = []
@@ -80,7 +87,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
                       prompt_version=PROMPT_VERSION,
                       input_hash=hashlib.sha256((system + user).encode()).hexdigest(),
                       input={"ticker": pack.ticker, "thesis": thesis, "attempt": attempt, "language": language,
-                             "stance": stance, **(meta or {})})
+                             "stance": stance, "angles": list(angles), **(meta or {})})
         try:
             ledger.check(est)
         except BudgetExceeded as e:
@@ -98,7 +105,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
         else:
             if isinstance(res.data, dict) and res.text:  # fields written in a text block instead of the tool input
                 res = res.model_copy(update={"data": params_from_text(res.text, res.data, TOP_FIELDS)})
-            output, report = validate_output(res.data, pack, user_thesis=thesis)
+            output, report = validate_output(res.data, pack, user_thesis=typed)
         runs.append(ledger.record(AIRun(
             status="ok" if report.ok else "invalid", output=res.data, validation=report.model_dump(),
             tokens_in=res.tokens_in, tokens_out=res.tokens_out, cost_usd=res.cost_usd(prices),
@@ -112,13 +119,18 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
                                     {**common, "input": {**common["input"], "completion": sorted(missing)}})
             runs.append(done[0])
             if done[1] is not None:
-                output, report = validate_output(done[1], pack, user_thesis=thesis)
+                output, report = validate_output(done[1], pack, user_thesis=typed)
                 runs[-1] = runs[-1].model_copy(update={"validation": report.model_dump(),
                                                        "status": "ok" if report.ok else "invalid"})
                 ledger.amend(runs[-1])
             elif runs[-1].status == "budget_blocked":
                 return ResearchResult(ok=False, runs=runs, error=runs[-1].error)
         if report.ok:
+            if plain:  # optional plain-language layer: a separate small call that can never fail the answer
+                from .plain import add_plain_summaries
+                output, plain_runs = add_plain_summaries(output, provider, ledger, thesis=typed, pack=pack,
+                                                         surface=surface, language=language, meta=meta)
+                runs += plain_runs
             return ResearchResult(ok=True, output=output, report=report, runs=runs)
         user = (base_user + "\n\nYour previous answer failed validation. Fix exactly these problems and "
                 "answer again:\n" + to_model_names(report.feedback()))

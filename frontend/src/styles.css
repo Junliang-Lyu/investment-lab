@@ -31,6 +31,7 @@ h1 { font-size: 1.8rem; margin: 0 0 8px; }
 .muted { color: var(--muted); }
 .error { color: var(--bad); }
 .neg { color: var(--bad); }
+form.inline { display: inline-flex; gap: 6px; align-items: center; }
 .toolbar { display: flex; gap: 16px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
 select, input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); }
 button[type="submit"] { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
@@ -102,6 +103,13 @@ button.example:hover { border-color: var(--accent); }
 .refs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
 .ref { font-size: 0.8rem; font-variant-numeric: tabular-nums; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .ref a { color: inherit; text-decoration: none; }
+.plain { font-size: 1.05rem; line-height: 1.5; }
+.ccat { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); margin-right: 4px; vertical-align: 1px; }
+.ccat.business { color: var(--accent, #2563eb); }
+.ccat.risk { color: #b45309; }
+.more { margin-top: 6px; }
+.more summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+.claimtext { margin-top: 6px; font-size: 0.92rem; }
 .sub { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
 blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); font-size: 0.9rem; }
 blockquote cite { font-style: normal; font-size: 0.8rem; white-space: nowrap; }

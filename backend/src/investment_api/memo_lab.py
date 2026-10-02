@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
 
+from investment_ai.angles import AngleError, normalize_angles
 from investment_ai.lab_pack import lab_pack
 from investment_ai.memo_finalize import DECISION_ZH, render_final
 from investment_ai.memo_parse import ParsedMemo, _meaningful
@@ -54,6 +55,7 @@ class CreateMemo(BaseModel):
     thesis: str = Field(min_length=10, max_length=400)
     lang: Literal["zh", "en"] = "en"
     stance: Literal["long", "short"] = "long"
+    angles: list[str] = Field(default_factory=list, max_length=4)
 
 
 class Answers(BaseModel):
@@ -369,7 +371,11 @@ def add_memo_routes(r: APIRouter, settings, sk) -> MemoStore | None:
         if ticker not in settings.curated:
             raise HTTPException(404, "not in the Lab company list")
         thesis = normalize_thesis(req.thesis)
-        hit = sk.store.cached(cache_key(ticker, req.lang, thesis, req.stance))
+        try:
+            angles = normalize_angles(req.angles)
+        except AngleError as e:
+            raise HTTPException(422, str(e))
+        hit = sk.store.cached(cache_key(ticker, req.lang, thesis, req.stance, angles))
         if hit is None:  # the AI part comes only from this server's own skeptic results
             raise HTTPException(409, "Run the AI skeptic on this thesis first.")
         ip_hash = sk.visitor(request)
@@ -378,7 +384,7 @@ def add_memo_routes(r: APIRouter, settings, sk) -> MemoStore | None:
         if store.total() >= store.max_memos:
             raise HTTPException(503, "The Lab has reached its memo storage limit. Please try again later.")
         try:
-            pack = lab_pack(sk.load_company(ticker), thesis)
+            pack = lab_pack(sk.load_company(ticker), thesis, angles)
         except Exception:  # the memo still works without source links
             pack = None
         skeptic = render(hit["output"], pack, req.lang)
@@ -390,7 +396,7 @@ def add_memo_routes(r: APIRouter, settings, sk) -> MemoStore | None:
         rec = {"id": secrets.token_urlsafe(16), "created_at": now, "updated_at": now, "ip_hash": ip_hash,
                "ticker": ticker, "lang": req.lang, "thesis": thesis, "stance": req.stance,
                "skeptic": json.dumps(skeptic, ensure_ascii=False),
-               "skeptic_meta": json.dumps({"model": hit["model"], "prompt_version": hit["prompt_version"]}),
+               "skeptic_meta": json.dumps({"model": hit["model"], "prompt_version": hit["prompt_version"], "angles": angles}),
                "answers": Answers().model_dump_json(), "state": memo.model_dump_json()}
         store.insert(rec)
         return view(store.get(rec["id"]), store)
