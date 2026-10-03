@@ -1,7 +1,7 @@
 """Lab memo workflow (DESIGN §11.5): thesis -> skeptic -> §A-§D -> AI review -> decision -> gate. No network."""
 
 import copy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from test_ai import good_output
@@ -110,7 +110,7 @@ def test_skipping_the_review_needs_a_reason(tmp_path, pack):
     c.put(f"/api/lab/memos/{m['id']}/answers", json=ANSWERS)
     assert c.post(f"/api/lab/memos/{m['id']}/finalize", json={"decision": "paper"}).status_code == 422
     m = c.post(f"/api/lab/memos/{m['id']}/finalize", json={"decision": "paper", "reason": "Paper only."}).json()
-    assert m["status"] == "final" and m["watch_started"] == str(date.today()) and prov.calls == 1
+    assert m["status"] == "final" and m["watch_started"] == str(datetime.now(timezone.utc).date()) and prov.calls == 1
     # Paper decided today: the gate's paper-to-live checks see 0 weeks.
     g = c.post("/api/lab/gate", json={"portfolio_id": "cash-heavy-starter", "symbol": "GOOG", "amount_usd": 300,
                                      "memo_id": m["id"]}).json()

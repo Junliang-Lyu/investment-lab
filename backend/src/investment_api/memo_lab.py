@@ -224,7 +224,8 @@ def gate_context(rec: dict | None, symbol: str, ctx: Context) -> str | None:
         return None
     memo = _state(rec)
     ctx.memos[symbol] = memo.summary()
-    ctx.today = max(ctx.today or date.min, date.today())  # the memo lives in real time, not the demo's price date
+    # The memo lives in real time (UTC, like watch_started), not the demo's price date.
+    ctx.today = max(ctx.today or date.min, datetime.now(timezone.utc).date())
     if rec.get("watch_started"):  # watchlist / paper time counts from the first such decision
         started = date.fromisoformat(rec["watch_started"])
         ctx.watchlist[symbol] = WatchEntry(symbol=symbol, mode="paper" if memo.decision == MemoDecision.PAPER else "watch",
