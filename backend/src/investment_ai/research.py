@@ -33,8 +33,8 @@ class ResearchResult(BaseModel):
     error: str | None = None
 
 
-def system_prompt(language: str) -> str:
-    text = (PROMPTS_DIR / f"{PROMPT_VERSION}.md").read_text(encoding="utf-8")
+def system_prompt(language: str, prompt_version: str = PROMPT_VERSION) -> str:
+    text = (PROMPTS_DIR / f"{prompt_version}.md").read_text(encoding="utf-8")
     return text.replace("{language}", LANGUAGES.get(language, language))
 
 
@@ -49,7 +49,10 @@ STANCE_TEXT = {"long": "bullish (the user expects the company to do well). count
                         "reducing). counter_arguments must be reasons the company may do BETTER than the user expects "
                         "(for example rising margins, accelerating growth, improving cash flow). Evidence that the "
                         "company is doing badly supports the user and belongs in supporting_points, never in "
-                        "counter_arguments."}
+                        "counter_arguments.",
+               "explain": "neutral (no opinion: this explains the latest quarter, it does not argue for or against "
+                          "the company). supporting_points are what went well; counter_arguments are what weakened "
+                          "or deserves attention."}
 
 
 def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh", stance: str = "long",
@@ -68,10 +71,11 @@ def user_prompt(pack: EvidencePack, thesis: str, language: str = "zh", stance: s
 def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, ledger: Ledger, *,
                          surface: str = "private", language: str = "zh", max_tokens: int = 4096,
                          max_attempts: int = 2, meta: dict | None = None, stance: str = "long",
-                         plain: bool = False, angles: list[str] | tuple = ()) -> ResearchResult:
+                         plain: bool = False, angles: list[str] | tuple = (),
+                         prompt_version: str = PROMPT_VERSION) -> ResearchResult:
     if not thesis.strip():
         raise ValueError("thesis is required (memo SOP Step 1 is written by the user)")
-    system = system_prompt(language)
+    system = system_prompt(language, prompt_version)
     base_user = user_prompt(pack, thesis, language, stance, angles)
     # What the visitor typed (thesis and angles): code words in it must not come back, its numbers are theirs.
     typed = thesis if not angles else thesis + "\n" + " ".join(angles)
@@ -84,7 +88,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
     for attempt in range(1, max_attempts + 1):
         est = ((len(system) + len(user)) / 3 * prices[0] + max_tokens * prices[1]) / 1e6
         common = dict(surface=surface, task="research_skeptic", provider=provider.name, model=provider.model,
-                      prompt_version=PROMPT_VERSION,
+                      prompt_version=prompt_version,
                       input_hash=hashlib.sha256((system + user).encode()).hexdigest(),
                       input={"ticker": pack.ticker, "thesis": thesis, "attempt": attempt, "language": language,
                              "stance": stance, "angles": list(angles), **(meta or {})})

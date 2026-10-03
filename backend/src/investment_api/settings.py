@@ -36,6 +36,10 @@ class Settings(BaseModel):
     custom_per_ip_daily: int = 20
     custom_global_daily: int = 150
     custom_cache_max: int = 40
+    # Quarter explanations on the company page: a visitor quota of their own, and part of the day's budget stays
+    # reserved for the skeptic (explanations stop when less than this is left today).
+    explain_per_ip_daily: int = 12
+    explain_reserve_usd: float = 0.15
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -57,7 +61,9 @@ class Settings(BaseModel):
                                  ("LAB_MEMO_REVIEW_PER_IP_DAILY", "memo_review_per_ip_daily", int),
                                  ("LAB_MEMO_MAX", "memo_max", int),
                                  ("LAB_CUSTOM_PER_IP_DAILY", "custom_per_ip_daily", int),
-                                 ("LAB_CUSTOM_GLOBAL_DAILY", "custom_global_daily", int)]:
+                                 ("LAB_CUSTOM_GLOBAL_DAILY", "custom_global_daily", int),
+                                 ("LAB_EXPLAIN_PER_IP_DAILY", "explain_per_ip_daily", int),
+                                 ("LAB_EXPLAIN_RESERVE_USD", "explain_reserve_usd", float)]:
             if os.environ.get(env):
                 kw[field] = cast(os.environ[env])
         return cls(**kw)

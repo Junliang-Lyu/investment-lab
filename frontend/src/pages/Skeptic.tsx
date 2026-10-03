@@ -1,11 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { api, ApiError, EvalReport, SkepticClaim, SkepticResponse, SkepticResult, SkepticStatus } from "../api";
 import { navigate } from "../App";
 import { pct } from "../format";
 import { Strings, useLang } from "../i18n";
 import { rememberMemo } from "../memos";
 
-export function Claim({ c, r, t, bear }: { c: SkepticClaim; r: SkepticResult; t: Strings; bear?: boolean }) {
+export function Claim({ c, r, t, bear, breaksLabel }: { c: SkepticClaim; r: SkepticResult; t: Strings; bear?: boolean; breaksLabel?: string }) {
   const plain = !!c.plain_summary;
   const detail = (
     <>
@@ -44,7 +44,7 @@ export function Claim({ c, r, t, bear }: { c: SkepticClaim; r: SkepticResult; t:
             {c.angle && <span className="ccat">{c.angle}</span>} {c.plain_summary}{" "}
             <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span>
           </div>
-          {bear && c.breaks_assumption && <div className="sub"><b>{t.skBreaks}:</b> {c.breaks_assumption}</div>}
+          {bear && c.breaks_assumption && <div className="sub"><b>{breaksLabel ?? t.skBreaks}:</b> {c.breaks_assumption}</div>}
           <details className="more">
             <summary>{t.skDetails}</summary>
             {detail}
@@ -54,7 +54,7 @@ export function Claim({ c, r, t, bear }: { c: SkepticClaim; r: SkepticResult; t:
         <>
           <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span> {c.claim}
           {detail}
-          {bear && c.breaks_assumption && <div className="sub"><b>{t.skBreaks}:</b> {c.breaks_assumption}</div>}
+          {bear && c.breaks_assumption && <div className="sub"><b>{breaksLabel ?? t.skBreaks}:</b> {c.breaks_assumption}</div>}
         </>
       )}
     </li>
@@ -103,6 +103,8 @@ export default function Skeptic() {
   const [stance, setStance] = useState<"long" | "short">(
     new URLSearchParams(window.location.search).get("stance") === "short" ? "short" : "long");
   const [creating, setCreating] = useState(false);
+  const [other, setOther] = useState("");
+  const answerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api.companies().then((c) => setTickers(c.map((x) => x.ticker))).catch(() => {});
@@ -110,6 +112,9 @@ export default function Skeptic() {
     api.evals().then(setReport).catch(() => setReport(null));
   }, []);
   useEffect(() => { setExamples(null); }, [ticker]);
+  useEffect(() => {  // the answer appears below the form: bring it into view so it is clear that something happened
+    if (answer) answerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [answer]);
 
   async function showExamples() {
     if (examples) { setExamples(null); return; }
@@ -131,6 +136,10 @@ export default function Skeptic() {
     }
   }
 
+  const applyOther = () => {
+    const v = other.trim().toUpperCase().replace(".", "-");
+    if (/^[A-Z][A-Z\-]{0,9}$/.test(v)) { setTicker(v); setOther(""); }
+  };
   const toggleAngle = (a: string) =>
     setAngles((cur) => cur.includes(a) ? cur.filter((x) => x !== a) : cur.length < 4 ? [...cur, a] : cur);
   const addCustom = () => {
@@ -165,9 +174,16 @@ export default function Skeptic() {
       <form className="skeptic" onSubmit={submit}>
         <label>{t.company}{" "}
           <select value={ticker} onChange={(e) => setTicker(e.target.value)} disabled={busy}>
-            {tickers.map((x) => <option key={x}>{x}</option>)}
+            {[...tickers, ...(tickers.includes(ticker) ? [] : [ticker])].map((x) => <option key={x}>{x}</option>)}
           </select>
         </label>
+        <div className="otherticker">
+          <input value={other} maxLength={10} size={12} placeholder={t.customPlaceholder} aria-label={t.customLabel} disabled={busy}
+                 onChange={(e) => setOther(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyOther(); } }} />{" "}
+          <button type="button" className="secondary" disabled={busy || !other.trim()} onClick={applyOther}>{t.customUse}</button>
+          {tickers.length > 1 && !tickers.includes(ticker) && <span className="muted small"> {t.customNote(ticker)}</span>}
+        </div>
         <div className="stance" role="radiogroup" aria-label={t.stanceLabel}>
           <span className="muted small">{t.stanceLabel}</span>
           {(["long", "short"] as const).map((s) => (
@@ -198,7 +214,7 @@ export default function Skeptic() {
           <span className="muted small">{t.anglesHelp}</span>
         </div>
         <div className="actions">
-          <button type="submit" disabled={!enabled || busy || thesis.trim().length < 10}>{t.skSubmit}</button>
+          <button type="submit" disabled={!enabled || busy || thesis.trim().length < 10}>{busy ? t.skSubmitting : t.skSubmit}</button>
           <button type="button" className="linkish" onClick={showExamples}>
             {examples ? t.skExamplesHide : t.skExamplesShow}
           </button>
@@ -206,6 +222,7 @@ export default function Skeptic() {
             <span className="muted small">{t.skRemaining(status.visitor_remaining, status.per_visitor_daily)}</span>
           )}
         </div>
+        {busy && <p className="working status" role="status"><span className="spinner" aria-hidden="true" /> {t.skWorking}</p>}
         {examples && (
           <div className="examples">
             <p className="muted small">{t.skExamplesNote}</p>
@@ -216,33 +233,19 @@ export default function Skeptic() {
         )}
       </form>
 
-      {busy && <p className="muted working">{t.skWorking}</p>}
       {error && <p className="error">{error}</p>}
       {answer && !answer.ok && (
         <p className="notice">{t.skBlocked(answer.checks.advice, answer.checks.ungrounded_numbers, answer.checks.other)}</p>
       )}
       {answer?.ok && r && (
-        <div className="answer">
+        <div className="answer" ref={answerRef}>
           {answer.cached && <p className="muted small">{t.skCached}</p>}
+          {answer.evaluated === false && <p className="notice small">{t.notEvaluated}</p>}
           <p className="restated"><span className="muted small">{t.skRestated}{asked ? ` · ${t.stance[asked.stance]}` : ""}</span><br />{r.thesis_restated}</p>
           <h3>{t.skBear}</h3>
           <ol className="claims">{r.bear_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} bear />)}</ol>
           <h3>{t.skBull}</h3>
           <ul className="claims">{r.bull_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} />)}</ul>
-          <h3>{t.skWeakest}</h3>
-          <p>{r.weakest_assumption}</p>
-          <h3>{t.skInvalidation}</h3>
-          <ul>
-            {r.invalidation_suggestions.map((i) => (
-              <li key={i.condition}>{i.condition} — <span className="muted">{i.observable_metric}{i.threshold ? ` (${i.threshold})` : ""}</span></li>
-            ))}
-          </ul>
-          <h3>{t.skVerify}</h3>
-          <ul>
-            {r.verify_questions.map((q) => (
-              <li key={q.question}>{q.question} <span className="muted small">({t.skWhere}: {q.where_to_check})</span></li>
-            ))}
-          </ul>
           {r.computed && r.computed.length > 0 && (
             <details className="computed">
               <summary className="muted small">{t.skComputed(r.computed.length)}</summary>
@@ -251,7 +254,7 @@ export default function Skeptic() {
           )}
           <p className="muted small">{t.skMeta(answer.model ?? "?", answer.prompt_version)}</p>
           <div className="next">
-            <button type="button" className="primary" onClick={startMemo} disabled={creating || !asked}>{t.skContinue} →</button>
+            <button type="button" className="primary" onClick={startMemo} disabled={creating || !asked}>{creating ? t.skCreating : `${t.skContinue} →`}</button>
             <p className="muted small">{t.skContinueNote}</p>
           </div>
         </div>

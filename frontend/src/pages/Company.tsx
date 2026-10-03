@@ -3,6 +3,7 @@ import { api, Snapshot } from "../api";
 import { metric, pct, usd } from "../format";
 import { navigate } from "../App";
 import { useLang } from "../i18n";
+import Explainer from "./Explainer";
 
 const ROWS = ["revenue", "gross_margin", "operating_income", "operating_margin", "net_income", "cfo", "capex", "fcf",
   "cash_and_investments", "net_cash"];
@@ -61,13 +62,14 @@ export default function Company() {
           <button type="submit" className="secondary">{t.customGo}</button>
         </form>
         {data && <span className="muted">{data.company} · CIK {data.cik}</span>}
-        {curated && <button type="button" className="secondary" onClick={() => navigate("/lab/skeptic", { ticker })}>{t.snapNext(ticker)} →</button>}
+        <button type="button" className="secondary" onClick={() => navigate("/lab/skeptic", { ticker })}>{t.snapNext(ticker)} →</button>
       </div>
       {!curated && <p className="muted small">{t.customNote(ticker)}</p>}
       {loading && <p className="muted">{t.loadingFilings}</p>}
       {error && <p className="error">{error}</p>}
       {data && (
         <>
+          <Explainer ticker={data.ticker} />
           <div className="scroll" ref={scroller}>
             <table>
               <thead>

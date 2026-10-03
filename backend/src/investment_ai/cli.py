@@ -119,8 +119,39 @@ def main(argv: list[str] | None = None, *, provider=None, client=None, ledger=No
     er.add_argument("--resume", action="store_true", help="continue from partial.json in the results directory")
     er.add_argument("--max-usd", type=float, default=0.5, help="stop starting new cases once this much has been spent")
     er.add_argument("--max-minutes", type=float, default=8.0, help="stop starting new cases after this many minutes")
+    ex = sub.add_parser("explain-quarter", help="try the Lab quarter explainer on one company (about $0.02-0.04)")
+    ex.add_argument("ticker")
+    ex.add_argument("--provider", default="anthropic", choices=["anthropic", "gemini"])
+    ex.add_argument("--lang", default="zh", choices=["zh", "en"])
     args = ap.parse_args(argv)
     load_env_file()
+
+    if args.cmd == "explain-quarter":
+        from .explain import run_explainer
+        from .lab_pack import load_lab_company
+        client = client or EdgarClient(cache_dir=DEFAULT_CACHE)
+        company = load_lab_company(client, args.ticker.upper())
+        pack, result = run_explainer(company, provider or make_provider(args.provider), ledger or Ledger(eval_budget=True),
+                                     language=args.lang, surface="eval")
+        cost = sum(r.cost_usd for r in result.runs)
+        print(f"{args.ticker.upper()} ok={result.ok} attempts={sum(1 for r in result.runs if r.task == 'research_skeptic')} "
+              f"cost=${cost:.4f} passages={len(pack.passages)}")
+        if result.ok:
+            o = result.output
+            print("restated:", o.thesis_restated)
+            for title, items in (("WENT WELL", o.bull_case), ("WATCH", o.bear_case)):
+                print(f"-- {title}")
+                for c in items:
+                    print(f"  [{c.angle}] {c.claim}")
+                    if c.plain_summary:
+                        print(f"     plain: {c.plain_summary}")
+            print("weakest:", o.weakest_assumption)
+            print("watch next:", *[f"\n  - {x.condition} ({x.observable_metric})" for x in o.invalidation_suggestions])
+            return 0
+        print("failed:", result.error)
+        if result.report:
+            print(result.report.feedback())
+        return 1
 
     if args.cmd in ("eval-skeptic", "eval-memo-review"):
         if args.cmd == "eval-skeptic":

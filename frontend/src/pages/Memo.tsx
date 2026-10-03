@@ -29,6 +29,7 @@ function toPayload(f: MemoAnswers): MemoAnswers {
 
 // A max with a four-digit year makes browsers stop the year field at four digits and move on to the month.
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+const addDays = (day: string, n: number) => iso(new Date(Date.parse(day) + n * 864e5));
 const TODAY = iso(new Date());
 const MAX_DATE = iso(new Date(Date.now() + 5 * 366 * 864e5));
 const FIELD: Record<string, keyof Strings["mmField"]> = {
@@ -62,6 +63,7 @@ export default function MemoPage({ id }: { id: string }) {
   const [decideMsg, setDecideMsg] = useState<string | null>(null);
   const [showSkeptic, setShowSkeptic] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [next, setNext] = useState<{ estimated: string; past: boolean } | null>(null);
 
   function apply(m: LabMemo) {
     setMemo(m);
@@ -75,6 +77,12 @@ export default function MemoPage({ id }: { id: string }) {
       if (e instanceof ApiError && e.status === 404) { forgetMemo(id); setNotFound(true); } else setError(e.message);
     });
   }, [id]);
+
+  const ticker = memo?.ticker;
+  useEffect(() => {  // estimated next earnings date, shown beside the review date; silently absent if unavailable
+    if (!ticker) return;
+    api.nextEarnings(ticker).then(setNext).catch(() => setNext(null));
+  }, [ticker]);
 
   useEffect(() => {  // warn before leaving with unsaved answers
     if (!dirty) return;
@@ -225,6 +233,17 @@ export default function MemoPage({ id }: { id: string }) {
             <input className="wide" maxLength={300} value={form.review_focus} onChange={(e) => edit({ review_focus: e.target.value })} />
           </label>
         </div>
+        {form.review_date && form.review_date < TODAY && <p className="warn small">{t.mmDatePast}</p>}
+        {next && (
+          <p className="muted small">
+            {t.mmNext(next.estimated, next.past)}{" "}
+            {!next.past && !final && (
+              <button type="button" className="linkish" onClick={() => edit({ review_date: addDays(next.estimated, 1) })}>
+                {t.mmNextUse(addDays(next.estimated, 1))}
+              </button>
+            )}
+          </p>
+        )}
       </fieldset>
       {!final && (
         <div className={`savebar${dirty ? " sticky" : ""}`}>

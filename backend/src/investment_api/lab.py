@@ -6,6 +6,7 @@ import logging
 import re
 import threading
 import time
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +20,7 @@ from investment_core.importers import load_portfolio, load_rule_set
 from investment_core.models import Asset, AssetType, Sleeve, TradeProposal
 from investment_core.segments import member_label, segment_series
 
+from .earnings import estimate_next_earnings
 from .i18n import translate_findings, translate_gate
 from .ratelimit import RateLimiter
 
@@ -143,6 +145,37 @@ def build_router(settings, client_factory, provider_factory=None) -> APIRouter:
     @r.get("/companies")
     def companies():
         return [{"ticker": t} for t in settings.curated]
+
+    earn_cache: dict[str, tuple[float, list[date]]] = {}
+
+    @r.get("/companies/{ticker}/next-earnings")
+    def next_earnings(ticker: str):
+        """Estimated next earnings date of an SEC-registered company (see earnings.py)."""
+        t = ticker.upper().replace(".", "-")
+        if not TICKER.match(t):
+            raise HTTPException(422, "invalid ticker")
+        hit = earn_cache.get(t)
+        if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
+            filed = hit[1]
+        else:
+            try:
+                client = client_factory()
+                try:
+                    cik = client.cik_for(t)
+                except KeyError:
+                    raise HTTPException(404, "Ticker not found among SEC-registered companies.")
+                filed = [date.fromisoformat(f["filed"]) for f in client.filings(cik, ("8-K",))
+                         if "2.02" in (f.get("items") or "")]
+            except HTTPException:
+                raise
+            except Exception as e:
+                log.warning("next-earnings %s: SEC fetch failed: %s", t, e)
+                raise HTTPException(503, "Could not read the filing list right now.")
+            earn_cache[t] = (time.monotonic(), filed)
+        body = estimate_next_earnings(filed, datetime.now(timezone.utc).date())
+        if body is None:
+            raise HTTPException(404, "No earnings releases found.")
+        return body
 
     custom_use: dict = {"day": "", "total": 0, "ips": {}}
     custom_keys: list[str] = []  # snapshot cache keys of non-curated companies, oldest first

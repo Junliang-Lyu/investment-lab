@@ -368,9 +368,8 @@ def add_memo_routes(r: APIRouter, settings, sk) -> MemoStore | None:
     def create(req: CreateMemo, request: Request):
         need_store()
         store.purge()
-        ticker = req.ticker.upper()
-        if ticker not in settings.curated:
-            raise HTTPException(404, "not in the Lab company list")
+        from .skeptic import norm_ticker
+        ticker = norm_ticker(req.ticker)
         thesis = normalize_thesis(req.thesis)
         try:
             angles = normalize_angles(req.angles)
@@ -414,6 +413,9 @@ def add_memo_routes(r: APIRouter, settings, sk) -> MemoStore | None:
             raise HTTPException(409, "This memo is final. Reopen it as a new version to edit.")
         if memo.status == S.ARCHIVED:
             raise HTTPException(409, "This memo is archived.")
+        if answers.review_date and answers.review_date < store.now().date() and answers.review_date != _answers(rec).review_date:
+            # A date that has already passed is not a review date (one saved earlier may stay as it is).
+            raise HTTPException(422, [{"loc": ["body", "review_date"], "msg": "The review date must be today or later."}])
         new_content = content_from(rec, memo, answers)
         changed = answers != _answers(rec)
         memo = memo.model_copy(update={"content": new_content})

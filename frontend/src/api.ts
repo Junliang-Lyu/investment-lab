@@ -33,8 +33,11 @@ export type SkepticResult = {
   computed?: string[];
 };
 export type SkepticResponse =
-  | { ok: true; cached: boolean; attempts?: number; result: SkepticResult; model: string | null; prompt_version: string }
+  | { ok: true; cached: boolean; evaluated?: boolean; attempts?: number; result: SkepticResult; model: string | null; prompt_version: string }
   | { ok: false; cached: boolean; attempts: number; checks: { advice: number; ungrounded_numbers: number; other: number } };
+export type ExplainResponse =
+  | { ok: true; cached: boolean; evaluated: boolean; period: string; result: SkepticResult; model: string | null; prompt_version: string }
+  | { ok: false; reason: string; evaluated: boolean };
 export type SkepticStatus =
   | { enabled: false; reason: string }
   | { enabled: true; per_visitor_daily: number; visitor_remaining: number; budget_available: boolean; prompt_version: string };
@@ -98,11 +101,16 @@ export const api = {
     call<GateResult>(`/api/lab/gate?lang=${lang}`, { method: "POST", body: JSON.stringify(body) }),
   companies: () => call<{ ticker: string }[]>("/api/lab/companies"),
   snapshot: (ticker: string, lang: string) => call<Snapshot>(`/api/lab/companies/${encodeURIComponent(ticker)}/snapshot?lang=${lang}`),
+  nextEarnings: (ticker: string) =>
+    call<{ last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }>(
+      `/api/lab/companies/${encodeURIComponent(ticker)}/next-earnings`),
   theses: (ticker: string, lang: string) =>
     call<{ id: string; angle: string; text: string }[]>(`/api/lab/theses/${encodeURIComponent(ticker)}?lang=${lang}`),
   skepticStatus: () => call<SkepticStatus>("/api/lab/skeptic/status"),
   skeptic: (body: { ticker: string; thesis: string; lang: string; stance: string; angles?: string[] }) =>
     call<SkepticResponse>("/api/lab/skeptic", { method: "POST", body: JSON.stringify(body) }),
+  explain: (ticker: string, lang: string) =>
+    call<ExplainResponse>("/api/lab/explain", { method: "POST", body: JSON.stringify({ ticker, lang }) }),
   evals: () => call<EvalReport>("/api/lab/evals/latest"),
   createMemo: (body: { ticker: string; thesis: string; lang: string; stance: string; angles?: string[] }) =>
     call<LabMemo>("/api/lab/memos", { method: "POST", body: JSON.stringify(body) }),

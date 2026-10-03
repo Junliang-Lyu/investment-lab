@@ -89,6 +89,10 @@ button.linkish { font: inherit; background: none; border: none; color: var(--acc
 button.example { font: inherit; text-align: left; background: var(--bg); border: 1px dashed var(--line); border-radius: 6px; padding: 8px 10px; color: var(--text); cursor: pointer; }
 button.example:hover { border-color: var(--accent); }
 .working { animation: pulse 1.6s ease-in-out infinite; }
+.status { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 @keyframes pulse { 50% { opacity: 0.5; } }
 @media (prefers-reduced-motion: reduce) { .working { animation: none; } }
 .answer { margin-top: 8px; }
@@ -196,3 +200,9 @@ form.skeptic .stance label { flex-direction: row; font-size: 0.95rem; color: var
 .chip.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .customangle { display: flex; gap: 6px; align-items: center; }
 .customangle input { max-width: 220px; }
+
+.explain { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px 12px; margin: 16px 0 20px; }
+.explain h2 { margin: 12px 0 4px; font-size: 1.15rem; }
+.explain h3 { margin: 14px 0 6px; font-size: 1rem; }
+.otherticker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.otherticker input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }

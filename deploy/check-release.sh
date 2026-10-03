@@ -27,6 +27,7 @@ if [ -f "$HERE/site/index.html" ]; then
   # Features that must be in the shipped bundle (strings survive minification): focus-angle chips, other-company box.
   js=$(curl -s --max-time 30 "$LAB/${got:-assets/missing.js}")
   echo "$js" | grep -q "Look from these angles" && pass "bundle has focus-angle chips" || bad "bundle has focus-angle chips" "string not found in ${got:-?}"
+  echo "$js" | grep -q "What happened last quarter" && pass "bundle has the quarter explainer" || bad "bundle has the quarter explainer" "string not found in ${got:-?}"
 fi
 
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')
@@ -57,6 +58,8 @@ if echo "$b" | grep -q '"enabled":true'; then
   pass "AI skeptic status: ENABLED ($b)"
   c=$(code -X POST -H 'Content-Type: application/json' --data '{"ticker":"GOOG","thesis":"short"}' "$LAB/api/lab/skeptic")
   [ "$c" = 422 ] && pass "skeptic rejects too-short thesis" || bad "skeptic rejects too-short thesis" "got $c"
+  c=$(code -X POST -H 'Content-Type: application/json' --data '{"ticker":"XYZQ","lang":"en"}' "$LAB/api/lab/explain")
+  [ "$c" = 404 ] && pass "explain: unknown ticker rejected (no model call)" || bad "explain: unknown ticker rejected" "got $c"
 elif echo "$b" | grep -q '"enabled":false'; then
   pass "AI skeptic status: disabled"
 else
