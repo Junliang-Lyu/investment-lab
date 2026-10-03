@@ -41,7 +41,8 @@ body='{"portfolio_id":"concentrated-tech","symbol":"AMZN","side":"buy","amount_u
 b=$(curl -s --max-time 30 -X POST -H 'Content-Type: application/json' --data "$body" "$LAB/api/lab/gate")
 echo "$b" | grep -q '"overall":"rule_breaks"' && pass "gate POST" || bad "gate POST" "$(echo "$b" | head -c 150)"
 
-c=$(code "$LAB/api/lab/companies/IBKR/snapshot"); [ "$c" = 404 ] && pass "non-curated ticker rejected" || bad "non-curated ticker rejected" "got $c"
+c=$(code "$LAB/api/lab/companies/XYZQ/snapshot"); [ "$c" = 404 ] && pass "unknown ticker rejected" || bad "unknown ticker rejected" "got $c"
+c=$(code "$LAB/api/lab/companies/ORCL/snapshot"); [ "$c" = 200 ] && pass "other US company snapshot (ORCL)" || bad "other US company snapshot (ORCL)" "got $c"
 
 b=$(curl -s --max-time 30 -X POST -H 'Content-Type: application/json' --data "$body" "$LAB/api/lab/gate?lang=zh")
 echo "$b" | grep -q '仓位与集中度' && pass "gate in Chinese" || bad "gate in Chinese" "$(echo "$b" | head -c 150)"
