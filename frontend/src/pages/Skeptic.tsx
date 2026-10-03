@@ -41,7 +41,7 @@ export function Claim({ c, r, t, bear }: { c: SkepticClaim; r: SkepticResult; t:
       {plain ? (
         <>
           <div className="plain">
-            {c.category && <span className={`ccat ${c.category}`}>{t.skCat[c.category] ?? c.category}</span>} {c.plain_summary}{" "}
+            {c.angle && <span className="ccat">{c.angle}</span>} {c.plain_summary}{" "}
             <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span>
           </div>
           {bear && c.breaks_assumption && <div className="sub"><b>{t.skBreaks}:</b> {c.breaks_assumption}</div>}
@@ -97,7 +97,9 @@ export default function Skeptic() {
   const [answer, setAnswer] = useState<SkepticResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<EvalReport | null>(null);
-  const [asked, setAsked] = useState<{ ticker: string; thesis: string; stance: string } | null>(null);
+  const [asked, setAsked] = useState<{ ticker: string; thesis: string; stance: string; angles: string[] } | null>(null);
+  const [angles, setAngles] = useState<string[]>([]);
+  const [customAngle, setCustomAngle] = useState("");
   const [stance, setStance] = useState<"long" | "short">(
     new URLSearchParams(window.location.search).get("stance") === "short" ? "short" : "long");
   const [creating, setCreating] = useState(false);
@@ -118,8 +120,8 @@ export default function Skeptic() {
     e.preventDefault();
     setBusy(true); setError(null); setAnswer(null);
     try {
-      setAnswer(await api.skeptic({ ticker, thesis, lang, stance }));
-      setAsked({ ticker, thesis, stance });
+      setAnswer(await api.skeptic({ ticker, thesis, lang, stance, angles }));
+      setAsked({ ticker, thesis, stance, angles });
       api.skepticStatus().then(setStatus).catch(() => {});
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0;
@@ -129,11 +131,19 @@ export default function Skeptic() {
     }
   }
 
+  const toggleAngle = (a: string) =>
+    setAngles((cur) => cur.includes(a) ? cur.filter((x) => x !== a) : cur.length < 4 ? [...cur, a] : cur);
+  const addCustom = () => {
+    const v = customAngle.trim().replace(/\s+/g, " ");
+    if (v && v.length <= 30 && !angles.some((x) => x.toLowerCase() === v.toLowerCase()) && angles.length < 4) setAngles([...angles, v]);
+    setCustomAngle("");
+  };
+
   async function startMemo() {
     if (!asked) return;
     setCreating(true); setError(null);
     try {
-      const m = await api.createMemo({ ticker: asked.ticker, thesis: asked.thesis, lang, stance: asked.stance });
+      const m = await api.createMemo({ ticker: asked.ticker, thesis: asked.thesis, lang, stance: asked.stance, angles: asked.angles });
       rememberMemo({ id: m.id, ticker: m.ticker, thesis: m.thesis, at: m.created_at });
       navigate(`/lab/memo/${m.id}`);
     } catch (err) {
@@ -171,6 +181,22 @@ export default function Skeptic() {
                     onChange={(e) => setThesis(e.target.value)} />
           <span className="muted small count">{thesis.length}/400</span>
         </label>
+        <div className="angles">
+          <span className="muted small">{t.anglesLabel}</span>
+          <div className="chips">
+            {[...t.anglesPresets, ...angles.filter((a) => !t.anglesPresets.includes(a))].map((a) => (
+              <button type="button" key={a} className={`chip${angles.includes(a) ? " on" : ""}`} disabled={busy}
+                      aria-pressed={angles.includes(a)} onClick={() => toggleAngle(a)}>{a}</button>
+            ))}
+          </div>
+          <div className="customangle">
+            <input value={customAngle} maxLength={30} placeholder={t.anglesCustom} disabled={busy}
+                   onChange={(e) => setCustomAngle(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }} />
+            <button type="button" className="secondary" disabled={busy || !customAngle.trim()} onClick={addCustom}>{t.anglesAdd}</button>
+          </div>
+          <span className="muted small">{t.anglesHelp}</span>
+        </div>
         <div className="actions">
           <button type="submit" disabled={!enabled || busy || thesis.trim().length < 10}>{t.skSubmit}</button>
           <button type="button" className="linkish" onClick={showExamples}>

@@ -22,7 +22,7 @@ export type Snapshot = {
 export type SkepticClaim = {
   claim: string; type: "fact" | "inference" | "to_verify"; evidence_refs: string[];
   quotes: { source_id: string; text: string }[]; why_it_matters: string | null; breaks_assumption?: string;
-  plain_summary?: string | null; category?: "financial" | "business" | "risk" | null;
+  plain_summary?: string | null; angle?: string | null;
 };
 export type SkepticResult = {
   thesis_restated: string; bull_case: SkepticClaim[]; bear_case: SkepticClaim[]; weakest_assumption: string;
@@ -101,10 +101,10 @@ export const api = {
   theses: (ticker: string, lang: string) =>
     call<{ id: string; angle: string; text: string }[]>(`/api/lab/theses/${encodeURIComponent(ticker)}?lang=${lang}`),
   skepticStatus: () => call<SkepticStatus>("/api/lab/skeptic/status"),
-  skeptic: (body: { ticker: string; thesis: string; lang: string; stance: string }) =>
+  skeptic: (body: { ticker: string; thesis: string; lang: string; stance: string; angles?: string[] }) =>
     call<SkepticResponse>("/api/lab/skeptic", { method: "POST", body: JSON.stringify(body) }),
   evals: () => call<EvalReport>("/api/lab/evals/latest"),
-  createMemo: (body: { ticker: string; thesis: string; lang: string; stance: string }) =>
+  createMemo: (body: { ticker: string; thesis: string; lang: string; stance: string; angles?: string[] }) =>
     call<LabMemo>("/api/lab/memos", { method: "POST", body: JSON.stringify(body) }),
   memo: (id: string) => call<LabMemo>(`/api/lab/memos/${encodeURIComponent(id)}`),
   saveAnswers: (id: string, a: MemoAnswers) =>

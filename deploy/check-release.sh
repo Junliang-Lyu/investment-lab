@@ -24,6 +24,9 @@ if [ -f "$HERE/site/index.html" ]; then
   got=$(curl -s --max-time 30 "$LAB/lab" | grep -o 'assets/index-[A-Za-z0-9_-]*\.js' | head -1)
   [ -n "$want" ] && [ "$want" = "$got" ] && pass "served frontend is this release ($want)" \
     || bad "served frontend is this release" "serving ${got:-?}, release has ${want:-?}; run: dc up -d --force-recreate caddy"
+  # Features that must be in the shipped bundle (strings survive minification): focus-angle chips, other-company box.
+  js=$(curl -s --max-time 30 "$LAB/${got:-assets/missing.js}")
+  echo "$js" | grep -q "Look from these angles" && pass "bundle has focus-angle chips" || bad "bundle has focus-angle chips" "string not found in ${got:-?}"
 fi
 
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')
