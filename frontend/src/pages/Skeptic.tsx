@@ -103,7 +103,6 @@ export default function Skeptic() {
   const [stance, setStance] = useState<"long" | "short">(
     new URLSearchParams(window.location.search).get("stance") === "short" ? "short" : "long");
   const [creating, setCreating] = useState(false);
-  const [other, setOther] = useState("");
   const answerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -136,10 +135,7 @@ export default function Skeptic() {
     }
   }
 
-  const applyOther = () => {
-    const v = other.trim().toUpperCase().replace(".", "-");
-    if (/^[A-Z][A-Z\-]{0,9}$/.test(v)) { setTicker(v); setOther(""); }
-  };
+  const validTicker = /^[A-Z][A-Z-]{0,9}$/.test(ticker);
   const toggleAngle = (a: string) =>
     setAngles((cur) => cur.includes(a) ? cur.filter((x) => x !== a) : cur.length < 4 ? [...cur, a] : cur);
   const addCustom = () => {
@@ -172,17 +168,22 @@ export default function Skeptic() {
       {status && !enabled && <p className="notice">{t.skDisabled}</p>}
 
       <form className="skeptic" onSubmit={submit}>
-        <label>{t.company}{" "}
-          <select value={ticker} onChange={(e) => setTicker(e.target.value)} disabled={busy}>
-            {[...tickers, ...(tickers.includes(ticker) ? [] : [ticker])].map((x) => <option key={x}>{x}</option>)}
-          </select>
-        </label>
-        <div className="otherticker">
-          <input value={other} maxLength={10} size={12} placeholder={t.customPlaceholder} aria-label={t.customLabel} disabled={busy}
-                 onChange={(e) => setOther(e.target.value)}
-                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); applyOther(); } }} />{" "}
-          <button type="button" className="secondary" disabled={busy || !other.trim()} onClick={applyOther}>{t.customUse}</button>
-          {tickers.length > 1 && !tickers.includes(ticker) && <span className="muted small"> {t.customNote(ticker)}</span>}
+        <div className="tickerpick">
+          <label className="tickerfield">{t.company}
+            <input value={ticker} maxLength={10} size={10} disabled={busy} spellCheck={false} autoCapitalize="characters"
+                   placeholder={t.customPlaceholder} aria-label={t.company}
+                   onChange={(e) => setTicker(e.target.value.toUpperCase().replace(".", "-").replace(/[^A-Z-]/g, ""))} />
+          </label>
+          <div className="chips" role="group" aria-label={t.tickerQuick}>
+            <span className="muted small">{t.tickerQuick}</span>
+            {tickers.map((x) => (
+              <button type="button" key={x} className={`chip${ticker === x ? " on" : ""}`} disabled={busy}
+                      aria-pressed={ticker === x} onClick={() => setTicker(x)}>{x}</button>
+            ))}
+          </div>
+          {!validTicker ? <p className="error small">{t.tickerInvalid}</p>
+            : tickers.includes(ticker) ? <p className="muted small">{t.testedNote}</p>
+            : tickers.length > 1 && <p className="notice small">{t.customNote(ticker)}</p>}
         </div>
         <div className="stance" role="radiogroup" aria-label={t.stanceLabel}>
           <span className="muted small">{t.stanceLabel}</span>
@@ -214,7 +215,7 @@ export default function Skeptic() {
           <span className="muted small">{t.anglesHelp}</span>
         </div>
         <div className="actions">
-          <button type="submit" disabled={!enabled || busy || thesis.trim().length < 10}>{busy ? t.skSubmitting : t.skSubmit}</button>
+          <button type="submit" disabled={!enabled || busy || !validTicker || thesis.trim().length < 10}>{busy ? t.skSubmitting : t.skSubmit}</button>
           <button type="button" className="linkish" onClick={showExamples}>
             {examples ? t.skExamplesHide : t.skExamplesShow}
           </button>

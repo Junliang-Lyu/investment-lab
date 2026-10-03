@@ -206,3 +206,8 @@ form.skeptic .stance label { flex-direction: row; font-size: 0.95rem; color: var
 .explain h3 { margin: 14px 0 6px; font-size: 1rem; }
 .otherticker { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .otherticker input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+.tickerpick { display: grid; gap: 8px; }
+form.skeptic .tickerfield { flex-direction: row; align-items: center; gap: 8px; }
+.tickerfield input { font: inherit; font-size: 1rem; letter-spacing: 0.04em; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); width: 9em; }
+.tickerpick .chips { align-items: center; }
+.tickerpick p { margin: 0; }
