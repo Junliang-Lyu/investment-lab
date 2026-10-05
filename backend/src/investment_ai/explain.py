@@ -16,7 +16,8 @@ from .ledger import Ledger
 from .providers import Provider
 from .research import LAB_ATTEMPTS, LAB_MAX_TOKENS, ResearchResult, run_research_skeptic
 
-EXPLAIN_VERSION = "quarter_explainer_v1"
+EXPLAIN_VERSION = "quarter_explainer_v2"
+EXPLAIN_PLAIN_VERSION = "plain_summary_explain_v1"
 # Fixed and neutral, so the explanation depends on the company and the quarter only.
 EXPLAIN_THESIS = "What changed in the latest reported quarter, and what is worth watching next."
 EXPLAIN_TERMS = ["revenue increased", "revenue decreased", "operating income", "net income", "margin", "outlook",
@@ -49,5 +50,10 @@ def run_explainer(company: LabCompany, provider: Provider, ledger: Ledger, *, la
     pack = explain_pack(company)
     result = run_research_skeptic(pack, EXPLAIN_THESIS, provider, ledger, surface=surface, language=language,
                                   stance="explain", plain=True, max_attempts=LAB_ATTEMPTS,
-                                  max_tokens=LAB_MAX_TOKENS, prompt_version=EXPLAIN_VERSION)
+                                  max_tokens=LAB_MAX_TOKENS, prompt_version=EXPLAIN_VERSION,
+                                  plain_version=EXPLAIN_PLAIN_VERSION)
+    if result.ok and result.output is not None:
+        # Levels the model proposes for "what to watch" are guesses, not facts: only the metric and direction stay.
+        result.output.invalidation_suggestions = [i.model_copy(update={"threshold": None})
+                                                  for i in result.output.invalidation_suggestions]
     return pack, result

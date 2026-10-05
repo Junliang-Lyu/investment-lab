@@ -69,7 +69,7 @@ export default function Company() {
       {error && <p className="error">{error}</p>}
       {data && (
         <>
-          <Explainer ticker={data.ticker} />
+          <Explainer ticker={data.ticker} auto={tickers.includes(data.ticker)} />
           <div className="scroll" ref={scroller}>
             <table>
               <thead>

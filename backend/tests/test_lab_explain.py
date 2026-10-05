@@ -20,6 +20,7 @@ def test_explain_is_cached_per_company_and_quarter(tmp_path, pack):
     assert body["ok"] and not body["cached"] and body["evaluated"] is True, body
     assert body["prompt_version"] == EXPLAIN_VERSION and body["period"]
     assert len(body["result"]["bear_case"]) == 3 and "computed" in body["result"]
+    assert all(i["threshold"] is None for i in body["result"]["invalidation_suggestions"])  # no model-made levels
     again = explain(c, ip="2.2.2.2").json()  # other visitor, same company: no new model call
     assert again["ok"] and again["cached"] is True and prov.calls == 1
     assert again["result"]["bear_case"] == body["result"]["bear_case"]

@@ -58,9 +58,10 @@ def user_prompt(output: ResearchSkeptic, ids: set[str] | None = None) -> str:
 
 def add_plain_summaries(output: ResearchSkeptic, provider: Provider, ledger: Ledger, *, thesis: str = "",
                         pack: EvidencePack | None = None, surface: str = "private", language: str = "zh",
-                        max_attempts: int = 2, meta: dict | None = None) -> tuple[ResearchSkeptic, list[AIRun]]:
+                        max_attempts: int = 2, meta: dict | None = None,
+                        prompt_version: str = PLAIN_PROMPT_VERSION) -> tuple[ResearchSkeptic, list[AIRun]]:
     """Fill plain_summary on the claims where the model's sentence passes the checks. Never raises."""
-    system = (PROMPTS_DIR / f"{PLAIN_PROMPT_VERSION}.md").read_text(encoding="utf-8").replace(
+    system = (PROMPTS_DIR / f"{prompt_version}.md").read_text(encoding="utf-8").replace(
         "{language}", LANGUAGES.get(language, language))
     pts = points(output)
     markers = [m.lower() for m in thesis_markers(thesis, pack)] if thesis else []
@@ -78,7 +79,7 @@ def add_plain_summaries(output: ResearchSkeptic, provider: Provider, ledger: Led
                 "\n".join(f"{pid}: {', '.join(p)}" for pid, p in sorted(problems.items()) if pid in todo)
         est = ((len(system) + len(user)) / 3 * prices[0] + PLAIN_MAX_TOKENS * prices[1]) / 1e6
         common = dict(surface=surface, task="plain_summary", provider=provider.name, model=provider.model,
-                      prompt_version=PLAIN_PROMPT_VERSION,
+                      prompt_version=prompt_version,
                       input_hash=hashlib.sha256((system + user).encode()).hexdigest(),
                       input={"plain_attempt": attempt, "language": language, **(meta or {})})
         try:

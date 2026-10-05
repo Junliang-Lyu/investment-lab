@@ -38,7 +38,7 @@ class Settings(BaseModel):
     custom_cache_max: int = 40
     # Quarter explanations on the company page: a visitor quota of their own, and part of the day's budget stays
     # reserved for the skeptic (explanations stop when less than this is left today).
-    explain_per_ip_daily: int = 12
+    explain_per_ip_daily: int = 5
     explain_reserve_usd: float = 0.15
 
     @classmethod

@@ -3,21 +3,25 @@ import { api, ApiError, ExplainResponse } from "../api";
 import { useLang } from "../i18n";
 import { Claim } from "./Skeptic";
 
-type State = { kind: "loading" } | { kind: "ok"; data: Extract<ExplainResponse, { ok: true }> } | { kind: "none" } | { kind: "error"; status: number };
+type State = { kind: "idle" } | { kind: "loading" } | { kind: "ok"; data: Extract<ExplainResponse, { ok: true }> } | { kind: "none" } | { kind: "error"; status: number };
 
 // Plain-language reading of a company's latest quarter. Loads by itself when the company page opens; the server
 // caches it per company, language and quarter, so most visits are instant.
-export default function Explainer({ ticker }: { ticker: string }) {
+export default function Explainer({ ticker, auto }: { ticker: string; auto: boolean }) {
   const { t, lang } = useLang();
   const [state, setState] = useState<State>({ kind: "loading" });
+  const key = `${ticker}:${lang}`;
+  const [asked, setAsked] = useState("");  // companies outside the tested list are explained only when the visitor asks
+  const go = auto || asked === key;
   useEffect(() => {
     let live = true;
+    if (!go) { setState({ kind: "idle" }); return () => { live = false; }; }
     setState({ kind: "loading" });
     api.explain(ticker, lang)
       .then((d) => { if (live) setState(d.ok ? { kind: "ok", data: d } : { kind: "none" }); })
       .catch((e) => { if (live) setState({ kind: "error", status: e instanceof ApiError ? e.status : 0 }); });
     return () => { live = false; };
-  }, [ticker, lang]);
+  }, [ticker, lang, go]);
 
   const ok = state.kind === "ok" ? state.data : null;
   const r = ok?.result;
@@ -25,6 +29,12 @@ export default function Explainer({ ticker }: { ticker: string }) {
     <section className="explain">
       <h2>{t.explTitle}</h2>
       <p className="muted small">{t.explLede}</p>
+      {state.kind === "idle" && (
+        <p>
+          <span className="muted small">{t.explManual}</span><br />
+          <button type="button" className="secondary" onClick={() => setAsked(key)}>{t.explGenerate}</button>
+        </p>
+      )}
       {state.kind === "loading" && <p className="working status" role="status"><span className="spinner" aria-hidden="true" /> {t.explWorking}</p>}
       {state.kind === "none" && <p className="notice">{t.explNone}</p>}
       {state.kind === "error" && <p className="muted">{t.explErrors[state.status] ?? t.explErrors[0]}</p>}
