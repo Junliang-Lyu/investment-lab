@@ -1,0 +1,76 @@
+# Build a release and publish it as a GitHub Release. The server pulls it (deploy/server/auto-deploy.sh), so no
+# SSH into the server is needed and port 22 can stay closed to everything but the owner's own addresses.
+# Run it by hand: GitHub -> Actions -> Release -> Run workflow (works from a phone too). It builds from the
+# branch you pick (normally main). Optional: Settings -> Environments -> production -> Required reviewers adds an
+# approval click before it runs.
+name: Release
+on:
+  workflow_dispatch:
+concurrency:
+  group: release
+  cancel-in-progress: false
+permissions:
+  contents: write
+env:
+  SITE: https://invest.jun-liang-lyu.com
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e "./backend[dev]"
+      - name: Backend tests
+        run: python -m pytest -q
+        working-directory: backend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend build
+        run: npm ci && npm run build
+        working-directory: frontend
+      - name: Release id
+        id: ver
+        run: echo "id=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+      - name: API image
+        run: |
+          ID=${{ steps.ver.outputs.id }}
+          docker build -f deploy/api.Dockerfile -t "investment-api:$ID" .
+          # The image must not contain private data (same check as deploy/build-release.ps1).
+          docker run --rm "investment-api:$ID" sh -c "test ! -e /app/private-data && test ! -e /app/.env && ! ls /app/fixtures/rules | grep -v '^demo.yaml$'"
+      - name: Package
+        run: |
+          ID=${{ steps.ver.outputs.id }}
+          mkdir -p "out/$ID"
+          cp -r frontend/dist "out/$ID/site"
+          echo "release-$ID" > "out/$ID/site/release.txt"
+          cp deploy/invest.caddy deploy/compose.invest.yaml deploy/check-release.sh "out/$ID/"
+          docker save "investment-api:$ID" -o "out/$ID/investment-api-$ID.tar"
+          tar czf "lab-release-$ID.tar.gz" -C out "$ID"
+          sha256sum "lab-release-$ID.tar.gz" > "lab-release-$ID.tar.gz.sha256"
+          ls -la lab-release-*
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ID=${{ steps.ver.outputs.id }}
+          gh release create "release-$ID" "lab-release-$ID.tar.gz" "lab-release-$ID.tar.gz.sha256" \
+            --target "$GITHUB_SHA" --title "Lab release $ID" \
+            --notes "Built from commit $GITHUB_SHA. The server picks this up within a few minutes (deploy/server/auto-deploy.sh)."
+      - name: Wait until the server runs it
+        run: |
+          ID=${{ steps.ver.outputs.id }}
+          for i in $(seq 1 80); do
+            got=$(curl -fsS --max-time 20 "$SITE/release.txt" 2>/dev/null || true)
+            if [ "$got" = "release-$ID" ]; then echo "Deployed: $got"; exit 0; fi
+            echo "waiting ($i/80): site serves '${got:0:40}'"; sleep 15
+          done
+          echo "The server did not switch to release-$ID within 20 minutes. It rolls back when its own checks fail:"
+          echo "see 'journalctl -u investment-deploy' on the server."
+          exit 1

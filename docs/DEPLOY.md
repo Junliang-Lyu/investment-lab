@@ -137,6 +137,25 @@ AI 反方默认关闭。顺序不能反：先在本地跑 eval 并达标，再�
 5. 访客输入保存在命名卷 `invest_lab_data` 中 30 天后自动删除；花费记录不含访客数据。
 6. memo 工作流（DESIGN §11.5）和 AI 反方同一个开关。访客的 memo 也在 `invest_lab_data`（`lab.sqlite3` 的 `memos` 表），最后修改 180 天后自动删除。**这个卷现在有访客数据，不要随手删除**；需要备份时在服务器上 `docker run --rm -v invest_lab_data:/d -v "$PWD":/b alpine tar czf /b/lab-data.tgz -C /d .`。
 
+## 自动发布（推荐）
+
+不再需要 SSH 和手工粘贴。流程：GitHub Actions 构建并发布一个 Release，服务器上的定时器每 5 分钟拉取、校验、部署、检查，失败自动回滚。服务器不开放任何新入口，也不保存任何 GitHub 令牌（仓库公开，只读下载）。
+
+**一次性安装**（需要一次 SSH）：
+
+1. 把 `.github/workflows/` 和 `deploy/server/` 提交并推送到 `main`。
+2. 把 `deploy/server/` 整个目录复制到服务器（例如 `scp -r deploy/server ubuntu@<服务器>:/tmp/investment-server`），然后 `cd /tmp/investment-server && sudo bash install.sh ubuntu`。脚本会检查 docker/curl/python3/flock/sha256sum/tar，创建 `/opt/investment/{bin,releases,state}`，安装脚本和 systemd 单元并启用定时器。
+3. （可选，推荐）GitHub → Settings → Environments → `production` → 勾选 Required reviewers 并选自己：这样每次发布都要你点一次批准。
+4. 确认 GitHub 账号开启了两步验证。能触发发布的人就等于能改线上，所以这就是最后一道门。
+
+**每次发布**：GitHub → Actions → Release → Run workflow（选 main）。工作流会跑测试、构建前端和镜像、做镜像边界检查、打包并创建 `release-<UTC时间>` Release，然后每 15 秒轮询 `https://invest.jun-liang-lyu.com/release.txt`，直到它变成新的发布号（最多约 20 分钟），否则标红并发邮件。`ci.yml` 在每次推送和 PR 时单独跑测试和前端构建。
+
+**服务器行为**（`/opt/investment/bin/auto-deploy.sh`）：只接受 `release-YYYYMMDDTHHMMSSZ` 格式的 tag，且发布者在 `ALLOWED_PUBLISHERS`（默认 `github-actions[bot],Junliang-Lyu`）之内；校验 sha256 和压缩包路径；`docker load` 镜像；切换 `current` 软链接和 `.env.production` 里的 `INVEST_API_IMAGE`；`up -d` 并重建 caddy；最多 3 次运行 `check-release.sh`；成功记入 `/opt/investment/state/last_good`，失败记入 `last_failed` 并回滚到上一个版本（同一个失败的版本不会反复重试）。
+
+**排查**：`sudo systemctl status investment-deploy.timer`、`sudo journalctl -u investment-deploy -n 100`、`cat /opt/investment/state/last-deploy.txt`。立刻拉取：`sudo systemctl start investment-deploy.service`。暂停自动发布：`sudo systemctl disable --now investment-deploy.timer`。
+
+以后 SSH 规则可以收回到只允许你本人常用 IP，甚至关闭 22 端口；旧的手工路径（`build-release.ps1`）仍可作为备用。
+
 ## 回滚和下线
 
 - 回滚：`ln -sfn /opt/investment/releases/<上一个ID> /opt/investment/current`，把 `INVEST_API_IMAGE` 改回上一个镜像，`dc up -d`。

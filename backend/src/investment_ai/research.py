@@ -73,7 +73,8 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
                          max_attempts: int = 2, meta: dict | None = None, stance: str = "long",
                          plain: bool = False, angles: list[str] | tuple = (),
                          prompt_version: str = PROMPT_VERSION, plain_version: str | None = None,
-                         post_check: Callable[[ResearchSkeptic], list[str]] | None = None) -> ResearchResult:
+                         post_check: Callable[[ResearchSkeptic], list[str]] | None = None,
+                         plain_reasoning: bool = True) -> ResearchResult:
     if not thesis.strip():
         raise ValueError("thesis is required (memo SOP Step 1 is written by the user)")
     system = system_prompt(language, prompt_version)
@@ -138,7 +139,8 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
                 from .plain import PLAIN_PROMPT_VERSION
                 output, plain_runs = add_plain_summaries(output, provider, ledger, thesis=typed, pack=pack,
                                                          surface=surface, language=language, meta=meta,
-                                                         prompt_version=plain_version or PLAIN_PROMPT_VERSION)
+                                                         prompt_version=plain_version or PLAIN_PROMPT_VERSION,
+                                                         reasoning=plain_reasoning)
                 runs += plain_runs
             return ResearchResult(ok=True, output=output, report=report, runs=runs)
         user = (base_user + "\n\nYour previous answer failed validation. Fix exactly these problems and "

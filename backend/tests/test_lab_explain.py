@@ -118,3 +118,15 @@ def test_plain_sentence_cannot_add_a_first_or_a_record():
     assert not new_claim_words("Cash left after purchases turned negative.", c)
     first = Claim(claim="Revenue reached a record level.", type="fact")
     assert not new_claim_words("Sales hit a record.", first)
+
+
+def test_plain_layer_for_the_explainer_sees_only_the_claim(pack):
+    from investment_ai.plain import new_claim_words, user_prompt
+    from investment_ai.validate import ResearchSkeptic
+    out = ResearchSkeptic.model_validate(good_output(pack))
+    assert "why_it_matters" in user_prompt(out) or "breaks_assumption" in user_prompt(out)
+    p = user_prompt(out, reasoning=False)
+    assert "why_it_matters" not in p and "breaks_assumption" not in p
+    from investment_ai.validate import Claim
+    c = Claim(claim="Operating cash flow rose.", type="fact")
+    assert new_claim_words("Cash from operations surged.", c) and not new_claim_words("Cash from operations rose.", c)

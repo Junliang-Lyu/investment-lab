@@ -42,9 +42,9 @@ export default function Explainer({ ticker, auto }: { ticker: string; auto: bool
         <>
           {!ok.evaluated && <p className="notice small">{t.notEvaluated}</p>}
           <h3>{t.explWell}</h3>
-          <ul className="claims">{r.bull_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} />)}</ul>
+          <ul className="claims">{r.bull_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} showClaim />)}</ul>
           <h3>{t.explWatch}</h3>
-          <ol className="claims">{r.bear_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} bear breaksLabel={t.explBreaks} />)}</ol>
+          <ol className="claims">{r.bear_case.map((c) => <Claim key={c.claim} c={c} r={r} t={t} bear breaksLabel={t.explBreaks} showClaim />)}</ol>
           <p><b>{t.explOpen}:</b> {r.weakest_assumption}</p>
           <h3>{t.explNext}</h3>
           <ul className="claims">

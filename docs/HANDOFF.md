@@ -176,3 +176,12 @@
 
 - 2026-10-05 试跑后修正（v3）：ORCL 英文解读发现三类问题：「下一份财报看什么」仍写了 80%、100% 等阈值（提示词不够，代码现在检查并重试：condition/observable_metric/threshold 里不得有数字或百分号）；人话句加了原文没有的事实（"for the first time"、"return money to shareholders"），新增代码检查（首次/纪录/最高等词，原文没有就不收这句人话）并把人话提示词改为 plain_summary_explain_v2（明确禁止加"首次/纪录/资金用途/原因"）；净利润与营业利润增速不同时，把上一年同期的一次性收益说成本期增长原因（逻辑反了）——解读提示词 v3 的第 13 条要求一次性项目必须属于所描述的期间，上年同期的收益对同比增长是反方向。同时要求用中性动词，不用 surged/sharply/strong。GOOG 中文试跑 v2：无阈值，人话句基本只复述；"连续第 12 个季度实现两位数增长"来源待核（证据表只有 5 个季度，可能来自新闻稿）。测试 394 个通过。
 - 发布受阻：2026-10-05 build-release 在上传步骤 `ssh: connect to host jun-liang-lyu.com port 22: Connection timed out`（未切换版本，线上仍是上一版）。可能原因：AWS 安全组只放行旧 IP、当前网络封 22 端口、实例/网络故障。需要用户在 AWS 控制台检查，不要绕过。
+
+- 2026-10-06 v3 试跑后再修：ORCL 英文 v3 解读：「看什么」已无数字（第 1 次被代码拒绝后重写通过），净利润逻辑那条没再出现。但人话句仍有 3/6 加了 claim 里没有的原因或用途（"to build out infrastructure"、"customers continue moving away from on-premises software"、"surged"）——来源是人话层同时看到了 why_it_matters（推断）。修正：解读的人话层只看 claim（`plain_reasoning=False`，不给 why_it_matters / breaks_assumption）；人话句新增判断词检查（surged/soared/massive/暴增/飙升等，原文没有就不收）；公司页解读每条在人话句下面常显「精确表述（已对照申报文件核对）」即原 claim，不再折叠。测试 395 个通过。
+
+## 2026-10-06 自动发布（拉取式）
+
+- 新增 `.github/workflows/ci.yml`（推送/PR：pytest + 前端构建）、`.github/workflows/release.yml`（手动触发、environment `production`：测试、构建、镜像边界检查、打包 `lab-release-<ID>.tar.gz` + sha256 → GitHub Release `release-<ID>`，然后轮询 `/release.txt` 确认上线）。
+- 新增 `deploy/server/`：`auto-deploy.sh`（flock、tag 格式与发布者白名单、sha256、路径检查、docker load、切换软链接、check-release 最多 3 次、失败回滚、状态在 `/opt/investment/state`）、`investment-deploy.service/.timer`（开机 2 分钟后，之后每 5 分钟）、`install.sh`。
+- 状态：以上文件只做过语法检查（bash -n、YAML 解析），还没有在真实服务器和 Actions 上跑过；第一次运行以实际结果为准。安装步骤见 DEPLOY.md「自动发布」。
+- 待发布的质量修复（explainer v3、plain 层只看 claim、判断词检查、精确说法显示、footer/ticker UI）会随第一次自动发布上线。

@@ -5,11 +5,11 @@ import { pct } from "../format";
 import { Strings, useLang } from "../i18n";
 import { rememberMemo } from "../memos";
 
-export function Claim({ c, r, t, bear, breaksLabel }: { c: SkepticClaim; r: SkepticResult; t: Strings; bear?: boolean; breaksLabel?: string }) {
+export function Claim({ c, r, t, bear, breaksLabel, showClaim }: { c: SkepticClaim; r: SkepticResult; t: Strings; bear?: boolean; breaksLabel?: string; showClaim?: boolean }) {
   const plain = !!c.plain_summary;
   const detail = (
     <>
-      {!plain ? null : <div className="claimtext"><span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span> {c.claim}</div>}
+      {!plain || showClaim ? null : <div className="claimtext"><span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span> {c.claim}</div>}
       {c.evidence_refs.length > 0 && (
         <div className="refs">
           {c.evidence_refs.map((ref) => {
@@ -44,6 +44,7 @@ export function Claim({ c, r, t, bear, breaksLabel }: { c: SkepticClaim; r: Skep
             {c.angle && <span className="ccat">{c.angle}</span>} {c.plain_summary}{" "}
             <span className={`ctype ${c.type}`}>{t.skType[c.type] ?? c.type}</span>
           </div>
+          {showClaim && <div className="claimline"><b>{t.explPrecise}:</b> {c.claim}</div>}
           {bear && c.breaks_assumption && <div className="sub"><b>{breaksLabel ?? t.skBreaks}:</b> {c.breaks_assumption}</div>}
           <details className="more">
             <summary>{t.skDetails}</summary>

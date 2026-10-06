@@ -36,11 +36,12 @@ SCHEMA = {
 
 _NEW_CLAIM = re.compile(
     r"first time|for the first|record|all-time|unprecedented|highest|lowest|\bever\b|"
-    r"首次|第一次|创纪录|纪录|历史新高|历史最|前所未有|史上|有史以来", re.IGNORECASE)
+    r"surg(?:e|ed|es|ing)\b|soar(?:ed|s|ing)?\b|skyrocket|plunge[ds]?\b|massive|enormous|"
+    r"首次|第一次|创纪录|纪录|历史新高|历史最|前所未有|史上|有史以来|暴增|飙升|激增|暴跌|暴涨", re.IGNORECASE)
 
 
 def new_claim_words(text: str, claim) -> list[str]:
-    """Words that state a new fact (a first, a record) are allowed only if the point itself says them."""
+    """Words that state a new fact (a first, a record) or a verdict (surged, massive) are allowed only if the point itself says them."""
     source = " ".join(filter(None, [claim.claim, claim.why_it_matters or ""])).lower()
     return [f"adds a claim the point does not make: \"{m.group(0)}\"" for m in _NEW_CLAIM.finditer(text.lower())
             if m.group(0) not in source]
@@ -53,7 +54,7 @@ def points(output: ResearchSkeptic) -> dict[str, tuple[str, object]]:
     return out
 
 
-def user_prompt(output: ResearchSkeptic, ids: set[str] | None = None) -> str:
+def user_prompt(output: ResearchSkeptic, ids: set[str] | None = None, reasoning: bool = True) -> str:
     items = []
     for pid, (kind, c) in points(output).items():
         if ids is not None and pid not in ids:
@@ -61,9 +62,9 @@ def user_prompt(output: ResearchSkeptic, ids: set[str] | None = None) -> str:
         item = {"id": pid, "kind": kind, "claim": c.claim}
         if c.angle:
             item["angle"] = c.angle
-        if c.why_it_matters:
+        if reasoning and c.why_it_matters:
             item["why_it_matters"] = c.why_it_matters
-        if kind == "counter" and getattr(c, "breaks_assumption", None):
+        if reasoning and kind == "counter" and getattr(c, "breaks_assumption", None):
             item["breaks_assumption"] = c.breaks_assumption
         items.append(item)
     return "Points:\n" + json.dumps(items, ensure_ascii=False, indent=1)
@@ -72,7 +73,8 @@ def user_prompt(output: ResearchSkeptic, ids: set[str] | None = None) -> str:
 def add_plain_summaries(output: ResearchSkeptic, provider: Provider, ledger: Ledger, *, thesis: str = "",
                         pack: EvidencePack | None = None, surface: str = "private", language: str = "zh",
                         max_attempts: int = 2, meta: dict | None = None,
-                        prompt_version: str = PLAIN_PROMPT_VERSION) -> tuple[ResearchSkeptic, list[AIRun]]:
+                        prompt_version: str = PLAIN_PROMPT_VERSION,
+                        reasoning: bool = True) -> tuple[ResearchSkeptic, list[AIRun]]:
     """Fill plain_summary on the claims where the model's sentence passes the checks. Never raises."""
     system = (PROMPTS_DIR / f"{prompt_version}.md").read_text(encoding="utf-8").replace(
         "{language}", LANGUAGES.get(language, language))
@@ -86,7 +88,7 @@ def add_plain_summaries(output: ResearchSkeptic, provider: Provider, ledger: Led
         todo = set(pts) - set(done)
         if not todo:
             break
-        user = user_prompt(output, todo)
+        user = user_prompt(output, todo, reasoning)
         if problems:
             user += "\n\nYour previous sentences failed these checks; write them again without the problem:\n" + \
                 "\n".join(f"{pid}: {', '.join(p)}" for pid, p in sorted(problems.items()) if pid in todo)

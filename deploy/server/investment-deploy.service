@@ -1,0 +1,10 @@
+[Unit]
+Description=Investment Lab: install the newest GitHub release if there is one
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+ExecStart=/opt/investment/bin/auto-deploy.sh
+TimeoutStartSec=1200

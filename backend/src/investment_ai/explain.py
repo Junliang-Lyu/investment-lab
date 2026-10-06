@@ -67,7 +67,7 @@ def run_explainer(company: LabCompany, provider: Provider, ledger: Ledger, *, la
     result = run_research_skeptic(pack, EXPLAIN_THESIS, provider, ledger, surface=surface, language=language,
                                   stance="explain", plain=True, max_attempts=LAB_ATTEMPTS,
                                   max_tokens=LAB_MAX_TOKENS, prompt_version=EXPLAIN_VERSION,
-                                  plain_version=EXPLAIN_PLAIN_VERSION, post_check=watch_problems)
+                                  plain_version=EXPLAIN_PLAIN_VERSION, post_check=watch_problems, plain_reasoning=False)
     if result.ok and result.output is not None:
         # Levels the model proposes for "what to watch" are guesses, not facts: only the metric and direction stay.
         result.output.invalidation_suggestions = [i.model_copy(update={"threshold": None})
