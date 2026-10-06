@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
@@ -72,7 +72,8 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
                          surface: str = "private", language: str = "zh", max_tokens: int = 4096,
                          max_attempts: int = 2, meta: dict | None = None, stance: str = "long",
                          plain: bool = False, angles: list[str] | tuple = (),
-                         prompt_version: str = PROMPT_VERSION, plain_version: str | None = None) -> ResearchResult:
+                         prompt_version: str = PROMPT_VERSION, plain_version: str | None = None,
+                         post_check: Callable[[ResearchSkeptic], list[str]] | None = None) -> ResearchResult:
     if not thesis.strip():
         raise ValueError("thesis is required (memo SOP Step 1 is written by the user)")
     system = system_prompt(language, prompt_version)
@@ -110,6 +111,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
             if isinstance(res.data, dict) and res.text:  # fields written in a text block instead of the tool input
                 res = res.model_copy(update={"data": params_from_text(res.text, res.data, TOP_FIELDS)})
             output, report = validate_output(res.data, pack, user_thesis=typed)
+            output, report = extra_check(output, report, post_check)
         runs.append(ledger.record(AIRun(
             status="ok" if report.ok else "invalid", output=res.data, validation=report.model_dump(),
             tokens_in=res.tokens_in, tokens_out=res.tokens_out, cost_usd=res.cost_usd(prices),
@@ -124,6 +126,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
             runs.append(done[0])
             if done[1] is not None:
                 output, report = validate_output(done[1], pack, user_thesis=typed)
+                output, report = extra_check(output, report, post_check)
                 runs[-1] = runs[-1].model_copy(update={"validation": report.model_dump(),
                                                        "status": "ok" if report.ok else "invalid"})
                 ledger.amend(runs[-1])
@@ -143,6 +146,16 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
 
     # Fail closed: an output that never passed validation is not shown.
     return ResearchResult(ok=False, report=report, runs=runs, error="output failed validation")
+
+
+def extra_check(output, report: ValidationReport, check) -> tuple:
+    """Caller-specific rules that apply after the standard validation; a problem fails the answer like any other."""
+    if check is None or not report.ok or output is None:
+        return output, report
+    problems = check(output)
+    if not problems:
+        return output, report
+    return None, report.model_copy(update={"ok": False, "errors": [*report.errors, *problems]})
 
 
 COMPLETABLE = ("invalidation_suggestions", "verify_questions")

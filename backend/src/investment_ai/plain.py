@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from .evidence import EvidencePack
@@ -31,6 +32,18 @@ SCHEMA = {
         "required": ["id", "plain_summary"]}}},
     "required": ["summaries"],
 }
+
+
+_NEW_CLAIM = re.compile(
+    r"first time|for the first|record|all-time|unprecedented|highest|lowest|\bever\b|"
+    r"首次|第一次|创纪录|纪录|历史新高|历史最|前所未有|史上|有史以来", re.IGNORECASE)
+
+
+def new_claim_words(text: str, claim) -> list[str]:
+    """Words that state a new fact (a first, a record) are allowed only if the point itself says them."""
+    source = " ".join(filter(None, [claim.claim, claim.why_it_matters or ""])).lower()
+    return [f"adds a claim the point does not make: \"{m.group(0)}\"" for m in _NEW_CLAIM.finditer(text.lower())
+            if m.group(0) not in source]
 
 
 def points(output: ResearchSkeptic) -> dict[str, tuple[str, object]]:
@@ -101,6 +114,7 @@ def add_plain_summaries(output: ResearchSkeptic, provider: Provider, ledger: Led
             if pid not in todo or not isinstance(text, str):
                 continue
             probs = plain_text_problems(text)
+            probs += new_claim_words(text, pts[pid][1])
             if any(m and m in text.lower() for m in markers):
                 probs.append("repeats a code word from the thesis")
             if probs:

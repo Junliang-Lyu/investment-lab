@@ -98,3 +98,23 @@ def test_cli_explain_quarter(pack, tmp_path, capsys):
     assert rc == 0 and "ok=True" in out and "WENT WELL" in out and "WATCH" in out
     run = Ledger(tmp_path / "r.jsonl").runs()[0]
     assert run.prompt_version == EXPLAIN_VERSION
+
+
+def test_explain_rejects_made_up_levels_and_retries(tmp_path, pack):
+    bad = copy.deepcopy(good_output(pack))
+    bad["invalidation_suggestions"][1]["condition"] = "Cloud growth falls below 80% year over year"
+    prov = Counting([bad, good_output(pack)])
+    body = explain(make(tmp_path, prov)).json()
+    assert body["ok"] and prov.calls == 2, body
+    assert not any(ch.isdigit() for i in body["result"]["invalidation_suggestions"] for ch in i["condition"])
+
+
+def test_plain_sentence_cannot_add_a_first_or_a_record():
+    from investment_ai.plain import new_claim_words
+    from investment_ai.validate import Claim
+    c = Claim(claim="Free cash flow turned negative in the quarter.", type="fact")
+    assert new_claim_words("Cash left after purchases turned negative for the first time.", c)
+    assert new_claim_words("现金流首次转负。", c)
+    assert not new_claim_words("Cash left after purchases turned negative.", c)
+    first = Claim(claim="Revenue reached a record level.", type="fact")
+    assert not new_claim_words("Sales hit a record.", first)
