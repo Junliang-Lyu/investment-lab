@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=__USER__
+# Runs as root on purpose: the script, the units and the docker socket are then not writable by the login user.
+User=root
 ExecStart=/opt/investment/bin/auto-deploy.sh
 TimeoutStartSec=1200

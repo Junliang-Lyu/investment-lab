@@ -185,3 +185,4 @@
 - 新增 `deploy/server/`：`auto-deploy.sh`（flock、tag 格式与发布者白名单、sha256、路径检查、docker load、切换软链接、check-release 最多 3 次、失败回滚、状态在 `/opt/investment/state`）、`investment-deploy.service/.timer`（开机 2 分钟后，之后每 5 分钟）、`install.sh`。
 - 状态：以上文件只做过语法检查（bash -n、YAML 解析），还没有在真实服务器和 Actions 上跑过；第一次运行以实际结果为准。安装步骤见 DEPLOY.md「自动发布」。
 - 待发布的质量修复（explainer v3、plain 层只看 claim、判断词检查、精确说法显示、footer/ticker UI）会随第一次自动发布上线。
+- 2026-10-06 晚:已装到服务器并实测。第一次触发 Release #1(`release-20261006T222631Z`)由定时器拉取并上线,check-release 全部通过(含 quarter explainer bundle 检查)。定时器以 root 运行(ubuntu 不在 docker 组),`/opt/investment/bin` 归 root。之后发布只需 GitHub Actions → Release → Run workflow。

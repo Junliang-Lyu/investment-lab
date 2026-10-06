@@ -144,7 +144,7 @@ AI 反方默认关闭。顺序不能反：先在本地跑 eval 并达标，再�
 **一次性安装**（需要一次 SSH）：
 
 1. 把 `.github/workflows/` 和 `deploy/server/` 提交并推送到 `main`。
-2. 把 `deploy/server/` 整个目录复制到服务器（例如 `scp -r deploy/server ubuntu@<服务器>:/tmp/investment-server`），然后 `cd /tmp/investment-server && sudo bash install.sh ubuntu`。脚本会检查 docker/curl/python3/flock/sha256sum/tar，创建 `/opt/investment/{bin,releases,state}`，安装脚本和 systemd 单元并启用定时器。
+2. 把 `deploy/server/` 整个目录复制到服务器（例如 `scp -r deploy/server ubuntu@<服务器>:/tmp/investment-server`），然后 `cd /tmp/investment-server && sudo bash install.sh ubuntu`。脚本会检查 docker/curl/python3/flock/sha256sum/tar（用 root 跑，所以不需要把 ubuntu 加进 docker 组），创建 `/opt/investment/{bin,releases,state}`，安装脚本和 systemd 单元并启用定时器。
 3. （可选，推荐）GitHub → Settings → Environments → `production` → 勾选 Required reviewers 并选自己：这样每次发布都要你点一次批准。
 4. 确认 GitHub 账号开启了两步验证。能触发发布的人就等于能改线上，所以这就是最后一道门。
 
