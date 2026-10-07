@@ -153,3 +153,20 @@ def test_watch_next_cannot_name_a_level_in_words(pack):
     for text in ("Google Cloud收入增速放缓至个位数", "growth falls to single-digit levels", "增速降到两位数以下"):
         out.invalidation_suggestions[0].condition = text
         assert watch_problems(out), text
+
+
+def test_explainer_claims_cannot_state_a_record_or_a_verdict(pack):
+    from investment_ai.explain import claim_problems
+    from investment_ai.validate import ResearchSkeptic
+    out = ResearchSkeptic.model_validate(good_output(pack))
+    assert not claim_problems(out)
+    c = out.bear_case[0]
+    original = c.claim
+    c.claim = original + " 占收入比例创历史新高。"
+    assert claim_problems(out)
+    c.claim = original + " Capex hit a record."
+    assert claim_problems(out)
+    c.claim = original + " 增长强劲。"
+    assert claim_problems(out)
+    c.claim = original
+    assert not claim_problems(out)

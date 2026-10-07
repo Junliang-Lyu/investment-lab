@@ -18,7 +18,7 @@ from .ledger import Ledger
 from .providers import Provider
 from .research import LAB_ATTEMPTS, LAB_MAX_TOKENS, ResearchResult, run_research_skeptic
 
-EXPLAIN_VERSION = "quarter_explainer_v3"
+EXPLAIN_VERSION = "quarter_explainer_v4"
 EXPLAIN_PLAIN_VERSION = "plain_summary_explain_v3"
 # Fixed and neutral, so the explanation depends on the company and the quarter only.
 EXPLAIN_THESIS = "What changed in the latest reported quarter, and what is worth watching next."
@@ -61,13 +61,38 @@ def watch_problems(output) -> list[str]:
     return out
 
 
+# A record or a first needs more history than the evidence table has (a handful of quarters), so it is allowed
+# only when a quote from the filing says it. Verdict adjectives are never the explainer's to give.
+_RECORD = re.compile(r"all-time|unprecedented|first time|for the first|historic|highest ever|lowest ever|\brecord\b|"
+                     r"历史新高|历史最|创纪录|纪录|史上|有史以来|前所未有|首次|第一次", re.IGNORECASE)
+_VERDICT = re.compile(r"robust|impressive|outstanding|stellar|alarming|disappointing|"
+                      r"强劲|表现突出|亮眼|惊人|出色|堪忧|令人担忧", re.IGNORECASE)
+
+
+def claim_problems(output) -> list[str]:
+    out = []
+    for c in [*output.bull_case, *output.bear_case]:
+        if not c.quotes:
+            for m in _RECORD.finditer(c.claim):
+                out.append(f"claim \"{c.claim[:40]}…\" says \"{m.group(0)}\", but the evidence covers only the latest few "
+                           f"quarters: compare only with the periods in the table, and do not claim a record or a first")
+        for m in _VERDICT.finditer(c.claim):
+            out.append(f"claim \"{c.claim[:40]}…\" uses the verdict word \"{m.group(0)}\": say what moved with a "
+                       f"neutral verb (rose, fell, grew faster), not how impressive or worrying it is")
+    return out
+
+
+def check_explanation(output) -> list[str]:
+    return [*watch_problems(output), *claim_problems(output)]
+
+
 def run_explainer(company: LabCompany, provider: Provider, ledger: Ledger, *, language: str = "zh",
                   surface: str = "lab") -> tuple[EvidencePack, ResearchResult]:
     pack = explain_pack(company)
     result = run_research_skeptic(pack, EXPLAIN_THESIS, provider, ledger, surface=surface, language=language,
                                   stance="explain", plain=True, max_attempts=LAB_ATTEMPTS,
                                   max_tokens=LAB_MAX_TOKENS, prompt_version=EXPLAIN_VERSION,
-                                  plain_version=EXPLAIN_PLAIN_VERSION, post_check=watch_problems, plain_reasoning=False)
+                                  plain_version=EXPLAIN_PLAIN_VERSION, post_check=check_explanation, plain_reasoning=False)
     if result.ok and result.output is not None:
         # Levels the model proposes for "what to watch" are guesses, not facts: only the metric and direction stay.
         result.output.invalidation_suggestions = [i.model_copy(update={"threshold": None})
