@@ -170,3 +170,26 @@ def test_explainer_claims_cannot_state_a_record_or_a_verdict(pack):
     assert claim_problems(out)
     c.claim = original
     assert not claim_problems(out)
+
+
+def test_explainer_claim_cannot_state_a_streak_without_a_quote(pack):
+    from investment_ai.explain import claim_problems
+    from investment_ai.validate import ResearchSkeptic
+    out = ResearchSkeptic.model_validate(good_output(pack))
+    c = out.bull_case[0]
+    original = c.claim
+    c.claim = original + " 连续第12个季度实现两位数增长。"
+    assert claim_problems(out)
+    c.claim = original + " Growth for the twelfth consecutive quarter."
+    assert claim_problems(out)
+    c.claim = original
+    assert not claim_problems(out)
+
+
+def test_plain_sentence_cannot_say_where_a_figure_comes_from():
+    from investment_ai.plain import new_claim_words
+    from investment_ai.validate import Claim
+    c = Claim(claim="净利润与营业利润的比率从90.2%升至275.2%。", type="fact")
+    assert new_claim_words("净利润增长很快，但其中包含了大量非经营性收益。", c)
+    assert new_claim_words("Net income includes large unrealized gains.", c)
+    assert not new_claim_words("净利润比营业利润大得多。", c)

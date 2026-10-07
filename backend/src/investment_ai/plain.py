@@ -40,7 +40,9 @@ _NEW_CLAIM = re.compile(
     r"首次|第一次|创纪录|纪录|历史新高|历史最|前所未有|史上|有史以来|暴增|飙升|激增|暴跌|暴涨|"
     # a reason the point does not give, or a verdict on how the company is doing
     r"because of|due to|thanks to|mainly|largely|cost control|under pressure|"
-    r"主要来自|主要由于|主要源于|主要靠|由于|因为|得益于|源于|归因于|成本控制|效率|压力", re.IGNORECASE)
+    r"主要来自|主要由于|主要源于|主要靠|由于|因为|得益于|源于|归因于|成本控制|效率|压力|"
+    # where a figure comes from, when the point does not say
+    r"非经营|非营业|非日常|一次性|投资收益|投资账面|未实现|non-operating|nonoperating|one-off|one-time|unrealized|investment gain", re.IGNORECASE)
 
 
 def new_claim_words(text: str, claim) -> list[str]:

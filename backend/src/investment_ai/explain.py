@@ -19,7 +19,7 @@ from .providers import Provider
 from .research import LAB_ATTEMPTS, LAB_MAX_TOKENS, ResearchResult, run_research_skeptic
 
 EXPLAIN_VERSION = "quarter_explainer_v4"
-EXPLAIN_PLAIN_VERSION = "plain_summary_explain_v3"
+EXPLAIN_PLAIN_VERSION = "plain_summary_explain_v4"
 # Fixed and neutral, so the explanation depends on the company and the quarter only.
 EXPLAIN_THESIS = "What changed in the latest reported quarter, and what is worth watching next."
 EXPLAIN_TERMS = ["revenue increased", "revenue decreased", "operating income", "net income", "margin", "outlook",
@@ -65,6 +65,8 @@ def watch_problems(output) -> list[str]:
 # only when a quote from the filing says it. Verdict adjectives are never the explainer's to give.
 _RECORD = re.compile(r"all-time|unprecedented|first time|for the first|historic|highest ever|lowest ever|\brecord\b|"
                      r"历史新高|历史最|创纪录|纪录|史上|有史以来|前所未有|首次|第一次", re.IGNORECASE)
+# "N quarters in a row" needs a longer history than the table has, so it needs a filing quote too.
+_STREAK = re.compile(r"consecutive|in a row|straight quarter|连续|第[一二三四五六七八九十百0-9]+个季度|已连", re.IGNORECASE)
 _VERDICT = re.compile(r"robust|impressive|outstanding|stellar|alarming|disappointing|"
                       r"强劲|表现突出|亮眼|惊人|出色|堪忧|令人担忧", re.IGNORECASE)
 
@@ -76,6 +78,10 @@ def claim_problems(output) -> list[str]:
             for m in _RECORD.finditer(c.claim):
                 out.append(f"claim \"{c.claim[:40]}…\" says \"{m.group(0)}\", but the evidence covers only the latest few "
                            f"quarters: compare only with the periods in the table, and do not claim a record or a first")
+        if not c.quotes:
+            for m in _STREAK.finditer(c.claim):
+                out.append(f"claim \"{c.claim[:40]}…\" says \"{m.group(0)}\", a streak the evidence table is too short to show: "
+                           f"compare only with the periods in the table, or support it with a quote from the filing")
         for m in _VERDICT.finditer(c.claim):
             out.append(f"claim \"{c.claim[:40]}…\" uses the verdict word \"{m.group(0)}\": say what moved with a "
                        f"neutral verb (rose, fell, grew faster), not how impressive or worrying it is")
