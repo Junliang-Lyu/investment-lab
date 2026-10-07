@@ -19,7 +19,7 @@ from .providers import Provider
 from .research import LAB_ATTEMPTS, LAB_MAX_TOKENS, ResearchResult, run_research_skeptic
 
 EXPLAIN_VERSION = "quarter_explainer_v3"
-EXPLAIN_PLAIN_VERSION = "plain_summary_explain_v2"
+EXPLAIN_PLAIN_VERSION = "plain_summary_explain_v3"
 # Fixed and neutral, so the explanation depends on the company and the quarter only.
 EXPLAIN_THESIS = "What changed in the latest reported quarter, and what is worth watching next."
 EXPLAIN_TERMS = ["revenue increased", "revenue decreased", "operating income", "net income", "margin", "outlook",
@@ -47,7 +47,7 @@ def latest_period(pack: EvidencePack) -> str:
     return max(ends) if ends else ""
 
 
-_LEVEL = re.compile(r"[0-9０-９%％]")
+_LEVEL = re.compile(r"[0-9０-９%％]|个位数|一位数|两位数|双位数|三位数|single[- ]digit|double[- ]digit|triple[- ]digit", re.IGNORECASE)
 
 
 def watch_problems(output) -> list[str]:

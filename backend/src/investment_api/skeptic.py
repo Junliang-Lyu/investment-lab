@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 
 from investment_ai.angles import AngleError, normalize_angles
 from investment_ai.evidence import ITEM_NAMES, label
-from investment_ai.explain import EXPLAIN_VERSION, latest_period, run_explainer
+from investment_ai.explain import EXPLAIN_PLAIN_VERSION, EXPLAIN_VERSION, latest_period, run_explainer
 from investment_ai.lab_pack import LabCompany, lab_pack, load_lab_company
 from investment_ai.ledger import AIRun, BudgetExceeded
 from investment_ai.research import LAB_ATTEMPTS, LAB_MAX_TOKENS, PROMPT_VERSION, run_research_skeptic
@@ -369,7 +369,7 @@ def add_skeptic_routes(r: APIRouter, settings, client_factory, fetch_lock: threa
         from investment_ai.explain import explain_pack
         pack = explain_pack(company)
         period = latest_period(pack)
-        key = hashlib.sha256(f"explain|{ticker}|{req.lang}|{period}|{EXPLAIN_VERSION}".encode()).hexdigest()
+        key = hashlib.sha256(f"explain|{ticker}|{req.lang}|{period}|{EXPLAIN_VERSION}|{EXPLAIN_PLAIN_VERSION}".encode()).hexdigest()
         evaluated = ticker in settings.curated
 
         def shown(hit: dict, cached: bool) -> dict:

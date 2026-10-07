@@ -37,7 +37,10 @@ SCHEMA = {
 _NEW_CLAIM = re.compile(
     r"first time|for the first|record|all-time|unprecedented|highest|lowest|\bever\b|"
     r"surg(?:e|ed|es|ing)\b|soar(?:ed|s|ing)?\b|skyrocket|plunge[ds]?\b|massive|enormous|"
-    r"首次|第一次|创纪录|纪录|历史新高|历史最|前所未有|史上|有史以来|暴增|飙升|激增|暴跌|暴涨", re.IGNORECASE)
+    r"首次|第一次|创纪录|纪录|历史新高|历史最|前所未有|史上|有史以来|暴增|飙升|激增|暴跌|暴涨|"
+    # a reason the point does not give, or a verdict on how the company is doing
+    r"because of|due to|thanks to|mainly|largely|cost control|under pressure|"
+    r"主要来自|主要由于|主要源于|主要靠|由于|因为|得益于|源于|归因于|成本控制|效率|压力", re.IGNORECASE)
 
 
 def new_claim_words(text: str, claim) -> list[str]:

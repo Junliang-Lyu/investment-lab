@@ -130,3 +130,26 @@ def test_plain_layer_for_the_explainer_sees_only_the_claim(pack):
     from investment_ai.validate import Claim
     c = Claim(claim="Operating cash flow rose.", type="fact")
     assert new_claim_words("Cash from operations surged.", c) and not new_claim_words("Cash from operations rose.", c)
+
+
+def test_plain_sentence_cannot_add_a_reason_or_a_verdict():
+    from investment_ai.plain import new_claim_words
+    from investment_ai.validate import Claim
+    c = Claim(claim="净利润与营业利润的比率从90.2%升至275.2%。", type="fact")
+    assert new_claim_words("净利润大幅增长，但增长主要来自投资等非日常业务项目。", c)
+    assert new_claim_words("现金状况出现压力。", c)
+    assert new_claim_words("成本控制有所改善。", c)
+    assert new_claim_words("Profit rose mainly because of one-off items.", c)
+    assert not new_claim_words("净利润比营业利润大得多。", c)
+    given = Claim(claim="Revenue grew, driven mainly by cloud.", type="fact")
+    assert not new_claim_words("Revenue grew, driven mainly by cloud.", given)
+
+
+def test_watch_next_cannot_name_a_level_in_words(pack):
+    from investment_ai.explain import watch_problems
+    from investment_ai.validate import ResearchSkeptic
+    out = ResearchSkeptic.model_validate(good_output(pack))
+    assert not watch_problems(out)
+    for text in ("Google Cloud收入增速放缓至个位数", "growth falls to single-digit levels", "增速降到两位数以下"):
+        out.invalidation_suggestions[0].condition = text
+        assert watch_problems(out), text
