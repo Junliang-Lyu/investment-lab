@@ -408,6 +408,17 @@ def _norm(text: str) -> str:
     return text.replace(" ", "").replace("$", "").replace("-", "").lower()
 
 
+def table_hint(num: NumberMention, pack: EvidencePack) -> str | None:
+    """Where an uncited number sits in the evidence table (so the model can cite it instead of dropping it)."""
+    hits = [i for i in pack.items if _norm(i.display) == _norm(num.text)
+            or (num.kind == "plain" and i.unit == "pp" and abs(abs(i.value) - num.value) < 1e-9)]
+    if not hits or len(hits) > 3:
+        return None
+    return f"{num.text} is " + " or ".join(
+        f"{i.metric}{' / ' + i.member if i.member else ''} in {i.fiscal_label or i.period_end} (fact_id {i.fact_id})"
+        for i in hits)
+
+
 def is_literal(num: NumberMention, pack: EvidencePack) -> bool:
     displays = {_norm(i.display) for i in pack.items}
     if _norm(num.text) in displays:
@@ -496,6 +507,8 @@ class ValidationReport(BaseModel):
     ok: bool
     errors: list[str] = Field(default_factory=list)
     ungrounded: list[str] = Field(default_factory=list)
+    # For an ungrounded number that IS a value in the table (just not cited, or its period not named): where.
+    ungrounded_hints: list[str] = Field(default_factory=list)
     forbidden: list[str] = Field(default_factory=list)
     bad_refs: list[str] = Field(default_factory=list)
     mislabeled: list[str] = Field(default_factory=list)
@@ -515,8 +528,15 @@ class ValidationReport(BaseModel):
         parts = []
         if self.errors:
             parts.append("Schema errors: " + "; ".join(self.errors))
-        if self.ungrounded:
-            parts.append("These numbers are not in the EVIDENCE table: " + ", ".join(self.ungrounded) + ". Rewrite each "
+        if self.ungrounded_hints:
+            parts.append("These numbers do appear in the EVIDENCE table, but the sentence does not cite them with "
+                         "the period they belong to: " + "; ".join(self.ungrounded_hints) + ". For each one, add that "
+                         "fact_id to the claim's evidence_refs AND write that period (for example the fiscal quarter "
+                         "label) in the same sentence, or drop the number. Check that the period you name is the "
+                         "one in the table.")
+        missing = [u for u in self.ungrounded if not any(h.startswith(u + " ") for h in self.ungrounded_hints)]
+        if missing:
+            parts.append("These numbers are not in the EVIDENCE table: " + ", ".join(missing) + ". Rewrite each "
                          "sentence that contains one: either use the exact table value together with its period, or "
                          "make the point in words without a number. Do not add any other number you calculated "
                          "(differences, relative changes, shares, averages, ranges).")
@@ -902,6 +922,7 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
     by_id = {i.fact_id: i for i in pack.items}
     pnums = passage_numbers(pack)
     ungrounded, forbidden = [], []
+    hints: list[str] = []
     mislabeled, bad_quotes, relabeled, computed = [], [], [], []
     for c in [*obj.bull_case, *obj.bear_case]:
         was_fact = c.type == "fact"
@@ -996,6 +1017,8 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
                     auto_refs.append(f"quote added [{sid}] for {n.text}")
                 continue
             ungrounded.append(n.text)
+            if (h := table_hint(n, pack)):
+                hints.append(h)
     cited = [by_id[r] for c in [*obj.bull_case, *obj.bear_case] for r in c.evidence_refs if r in by_id]
     quoted = [n for c in [*obj.bull_case, *obj.bear_case] for q in c.quotes
               if (p := pack.passage(q.source_id)) is not None and quote_found(q.text, p.text)
@@ -1030,6 +1053,8 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
                 auto_refs.append(f"{n.text} from [{hit[0]}]")
                 continue
             ungrounded.append(n.text)
+            if (h := table_hint(n, pack)):
+                hints.append(h)
     for i in obj.invalidation_suggestions:
         forbidden += forbidden_hits(f"{i.condition} {i.observable_metric} {i.threshold or ''}")
     for q in obj.verify_questions:
@@ -1052,7 +1077,7 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
     report = ValidationReport(ok=not (ungrounded or forbidden or bad_refs or mislabeled or bad_quotes or echoed or order),
                               unbalanced=balance_notes(obj),
                               echoed=echoed, period_order=order, advice_in_restated=restated_advice,
-                              ungrounded=sorted(set(ungrounded)), forbidden=sorted(set(forbidden)),
+                              ungrounded=sorted(set(ungrounded)), ungrounded_hints=sorted(set(hints)), forbidden=sorted(set(forbidden)),
                               bad_refs=bad_refs, mislabeled=mislabeled, bad_quotes=bad_quotes,
                               relabeled=relabeled, auto_refs=auto_refs, computed=computed)
     return obj, report

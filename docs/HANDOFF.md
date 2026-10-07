@@ -186,3 +186,4 @@
 - 状态：以上文件只做过语法检查（bash -n、YAML 解析），还没有在真实服务器和 Actions 上跑过；第一次运行以实际结果为准。安装步骤见 DEPLOY.md「自动发布」。
 - 待发布的质量修复（explainer v3、plain 层只看 claim、判断词检查、精确说法显示、footer/ticker UI）会随第一次自动发布上线。
 - 2026-10-06 晚:已装到服务器并实测。第一次触发 Release #1(`release-20261006T222631Z`)由定时器拉取并上线,check-release 全部通过(含 quarter explainer bundle 检查)。定时器以 root 运行(ubuntu 不在 docker 组),`/opt/investment/bin` 归 root。之后发布只需 GitHub Actions → Release → Run workflow。
+- 2026-10-06 夜 GOOG 中文试跑失败原因:模型写"上年同期的 40.1%"(Google Services 利润率,证据表里确有 FY2025 Q2 的 40.1%),但没引用该条目、也没写出期间,校验器按规则拒绝;而旧的反馈写"不在证据表里",模型无法改正,3 次都失败(花 $0.0945)。修复:`validate.py` 新增 `table_hint` 和 `ValidationReport.ungrounded_hints`,反馈会指出该数值在表里的位置(指标/期间/fact_id),要求引用该 fact_id 并在句中写出期间,或者删掉数字;表里没有的数字仍用旧反馈。校验规则本身没放宽。新增 2 个测试(待在本地跑,预期 397 个)。

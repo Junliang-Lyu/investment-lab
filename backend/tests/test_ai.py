@@ -271,6 +271,28 @@ def test_claim_number_must_match_its_own_refs(pack):
     assert other.display in report.ungrounded
 
 
+def test_uncited_table_value_is_pointed_at_in_the_feedback(pack):
+    """A number that is in the table but not cited (and whose period is not named) must be reported with its
+    fact_id, not as "not in the EVIDENCE table" -- the model cannot fix that message."""
+    out = good_output(pack)
+    other = item(pack, ":revenue:2025-06-30")
+    out["bull_case"][0]["claim"] = f"Revenue reached {other.display}."
+    _, report = validate_output(out, pack, THESIS)
+    assert not report.ok and other.display in report.ungrounded
+    assert any(other.fact_id in h for h in report.ungrounded_hints)
+    text = report.feedback()
+    assert other.fact_id in text and "evidence_refs" in text
+    assert f"These numbers are not in the EVIDENCE table: {other.display}" not in text
+
+
+def test_number_missing_from_the_table_keeps_the_old_feedback(pack):
+    out = good_output(pack)
+    out["bull_case"][1]["claim"] = "Search has 90% market share."
+    _, report = validate_output(out, pack, THESIS)
+    assert "90%" in report.ungrounded and not report.ungrounded_hints
+    assert "not in the EVIDENCE table: 90%" in report.feedback()
+
+
 def test_suggested_thresholds_are_exempt(pack):
     out = good_output(pack)
     out["invalidation_suggestions"][1]["threshold"] = "below 15% for two quarters"
