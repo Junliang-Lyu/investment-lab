@@ -91,10 +91,13 @@ class AnthropicProvider:
             raise LLMError("ANTHROPIC_API_KEY is not set (investment-lab/.env)")
         self.model = model or os.environ.get("ANTHROPIC_MODEL") or DEFAULT_MODELS["anthropic"]
         self._post, self.temperature = post or _default_post, temperature
+        # Newer models refuse the temperature setting ("`temperature` is deprecated for this model", HTTP 400,
+        # seen with claude-haiku-5-5 on 2026-10-08). They get none; an older name is retried once without it.
+        self._send_temperature = not self.model.lower().startswith("claude-haiku-5")
 
     def complete_json(self, system: str, user: str, schema: dict, max_tokens: int, strict: bool = False) -> LLMResult:
         body = {
-            "model": self.model, "max_tokens": max_tokens, "temperature": self.temperature, "system": system,
+            "model": self.model, "max_tokens": max_tokens, "system": system,
             "messages": [{"role": "user", "content": user}],
             "tools": [{"name": "submit", "description": "Submit the structured result.", "input_schema": schema,
                        # Strict tool use (grammar-constrained output) is opt-in: with Haiku 4.5 it made 5 of 16
@@ -104,7 +107,17 @@ class AnthropicProvider:
         }
         headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
         t0 = time.monotonic()
-        resp = json.loads(self._post(self.URL, headers, json.dumps(body).encode(), 90))
+        if self._send_temperature:
+            body["temperature"] = self.temperature
+        try:
+            raw = self._post(self.URL, headers, json.dumps(body).encode(), 90)
+        except LLMError as e:
+            if not (self._send_temperature and "temperature" in str(e) and "deprecated" in str(e)):
+                raise
+            self._send_temperature = False
+            body.pop("temperature", None)
+            raw = self._post(self.URL, headers, json.dumps(body).encode(), 90)
+        resp = json.loads(raw)
         latency = int((time.monotonic() - t0) * 1000)
         block = next((b for b in resp.get("content", []) if b.get("type") == "tool_use"), None)
         if block is None:

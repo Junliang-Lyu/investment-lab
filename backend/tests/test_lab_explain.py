@@ -204,3 +204,36 @@ def test_prices_follow_the_model(monkeypatch):
     assert prices_for("anthropic") == (1.0, 5.0)
     monkeypatch.setenv("ANTHROPIC_PRICE_IN", "2")
     assert prices_for("anthropic", "claude-haiku-5-5")[0] == 2.0
+
+
+def _temperature_post(calls, reject):
+    import json as _json
+
+    from investment_ai.providers import LLMError
+
+    def post(url, headers, body, timeout):
+        data = _json.loads(body)
+        calls.append(data)
+        if reject and "temperature" in data:
+            raise LLMError('HTTP 400: {"error":{"message":"`temperature` is deprecated for this model."}}')
+        return _json.dumps({"content": [{"type": "tool_use", "input": {"x": 1}}], "stop_reason": "tool_use",
+                            "usage": {"input_tokens": 1, "output_tokens": 1}, "model": data["model"]}).encode()
+    return post
+
+
+def test_haiku_5_gets_no_temperature_and_an_older_name_is_retried_without_it():
+    from investment_ai.providers import AnthropicProvider
+    calls = []
+    new = AnthropicProvider(api_key="k", model="claude-haiku-5-5", post=_temperature_post(calls, True))
+    assert new.complete_json("s", "u", {"type": "object"}, 100).data == {"x": 1}
+    assert len(calls) == 1 and "temperature" not in calls[0]
+    calls.clear()
+    old = AnthropicProvider(api_key="k", model="claude-haiku-4-5", post=_temperature_post(calls, False))
+    old.complete_json("s", "u", {"type": "object"}, 100)
+    assert "temperature" in calls[0]
+    calls.clear()
+    odd = AnthropicProvider(api_key="k", model="claude-future-9", post=_temperature_post(calls, True))
+    odd.complete_json("s", "u", {"type": "object"}, 100)
+    assert "temperature" in calls[0] and "temperature" not in calls[1]
+    odd.complete_json("s", "u", {"type": "object"}, 100)
+    assert "temperature" not in calls[2] and len(calls) == 3
