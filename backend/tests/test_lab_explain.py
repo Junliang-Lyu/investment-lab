@@ -193,3 +193,14 @@ def test_plain_sentence_cannot_say_where_a_figure_comes_from():
     assert new_claim_words("净利润增长很快，但其中包含了大量非经营性收益。", c)
     assert new_claim_words("Net income includes large unrealized gains.", c)
     assert not new_claim_words("净利润比营业利润大得多。", c)
+
+
+def test_prices_follow_the_model(monkeypatch):
+    from investment_ai.providers import prices_for
+    for name in ("ANTHROPIC_PRICE_IN", "ANTHROPIC_PRICE_OUT"):
+        monkeypatch.delenv(name, raising=False)
+    assert prices_for("anthropic", "claude-haiku-5-5") == (0.10, 0.50)
+    assert prices_for("anthropic", "claude-haiku-4-5") == (1.0, 5.0)
+    assert prices_for("anthropic") == (1.0, 5.0)
+    monkeypatch.setenv("ANTHROPIC_PRICE_IN", "2")
+    assert prices_for("anthropic", "claude-haiku-5-5")[0] == 2.0

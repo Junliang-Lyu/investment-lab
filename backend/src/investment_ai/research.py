@@ -82,7 +82,7 @@ def run_research_skeptic(pack: EvidencePack, thesis: str, provider: Provider, le
     # What the visitor typed (thesis and angles): code words in it must not come back, its numbers are theirs.
     typed = thesis if not angles else thesis + "\n" + " ".join(angles)
     schema = schema_for_prompt()
-    prices = prices_for(provider.name)
+    prices = prices_for(provider.name, provider.model)
     runs: list[AIRun] = []
     user = base_user
     report: ValidationReport | None = None

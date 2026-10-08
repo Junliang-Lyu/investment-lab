@@ -27,7 +27,7 @@ DEFAULT_PRICES = {
     "gemini": (0.75, 3.75),
     "fake": (0.0, 0.0),
 }
-DEFAULT_MODELS = {"anthropic": "claude-haiku-4-5", "gemini": "gemini-3.8-flash", "fake": "fake-model"}
+DEFAULT_MODELS = {"anthropic": "claude-haiku-5-5", "gemini": "gemini-3.8-flash", "fake": "fake-model"}
 
 
 class LLMError(RuntimeError):
@@ -65,8 +65,17 @@ def _default_post(url: str, headers: dict[str, str], body: bytes, timeout: float
         raise LLMError(f"HTTP {e.code} from {url.split('?')[0]}: {detail}") from None
 
 
-def prices_for(provider: str) -> tuple[float, float]:
-    base = DEFAULT_PRICES.get(provider, (5.0, 25.0))  # unknown: assume expensive
+# Per model (USD per million tokens, prompts up to 100K tokens; checked 2026-10-08 on the Anthropic pricing page).
+# Longer prompts cost more (Haiku 5.5: 0.50 / 2.50), which the Lab never sends. A model not listed falls back to
+# the provider default; <PROVIDER>_PRICE_IN / _PRICE_OUT still override everything.
+MODEL_PRICES = {
+    "claude-haiku-5-5": (0.10, 0.50),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def prices_for(provider: str, model: str | None = None) -> tuple[float, float]:
+    base = MODEL_PRICES.get((model or "").lower()) or DEFAULT_PRICES.get(provider, (5.0, 25.0))  # unknown: assume expensive
     p = provider.upper()
     return (float(os.environ.get(f"{p}_PRICE_IN", base[0])), float(os.environ.get(f"{p}_PRICE_OUT", base[1])))
 

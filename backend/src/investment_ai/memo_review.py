@@ -282,7 +282,7 @@ def run_memo_review(pm: ParsedMemo, pack: EvidencePack | None, provider: Provide
                     language: str = "zh", max_tokens: int = 3000, max_attempts: int = 2,
                     surface: str = "private", meta: dict | None = None) -> ReviewResult:
     system, base = _system(language), _user(pm, pack, language)
-    schema, prices, runs, user = review_schema(), prices_for(provider.name), [], base
+    schema, prices, runs, user = review_schema(), prices_for(provider.name, provider.model), [], base
     report = None
     for attempt in range(1, max_attempts + 1):
         common = dict(surface=surface, task="memo_user_review", provider=provider.name, model=provider.model,

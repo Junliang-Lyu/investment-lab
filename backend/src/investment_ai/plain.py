@@ -85,7 +85,7 @@ def add_plain_summaries(output: ResearchSkeptic, provider: Provider, ledger: Led
         "{language}", LANGUAGES.get(language, language))
     pts = points(output)
     markers = [m.lower() for m in thesis_markers(thesis, pack)] if thesis else []
-    prices = prices_for(provider.name)
+    prices = prices_for(provider.name, provider.model)
     runs: list[AIRun] = []
     done: dict[str, str] = {}
     problems: dict[str, list[str]] = {}
