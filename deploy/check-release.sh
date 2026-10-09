@@ -30,6 +30,8 @@ if [ -f "$HERE/site/index.html" ]; then
   echo "$js" | grep -q "What happened last quarter" && pass "bundle has the quarter explainer" || bad "bundle has the quarter explainer" "string not found in ${got:-?}"
   echo "$js" | grep -q "Upcoming earnings" && pass "bundle has the market context page" || bad "bundle has the market context page" "string not found in ${got:-?}"
   echo "$js" | grep -q "Background only, not a signal" && pass "bundle has the market background strip" || bad "bundle has the market background strip" "string not found in ${got:-?}"
+  echo "$js" | grep -q "How large investors allocate" && pass "bundle has the reference portfolios page" || bad "bundle has the reference portfolios page" "string not found in ${got:-?}"
+  echo "$js" | grep -q "Estimate from past release dates" && pass "bundle has the next-earnings callout" || bad "bundle has the next-earnings callout" "string not found in ${got:-?}"
 fi
 
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')
@@ -82,6 +84,14 @@ elif [ "$c" = 503 ]; then pass "earnings calendar unavailable right now (503, SE
 b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/macro"); c=${b##*$'\n'}
 if [ "$c" = 200 ]; then echo "$b" | grep -q '"series":\[{' && pass "macro series from FRED (200)" || bad "macro series" "200 without series"
 elif [ "$c" = 503 ]; then pass "macro series unavailable right now (503, FRED or switched off)"; else bad "macro series" "got $c"; fi
+
+# 13F reference portfolios: the page is a SPA route; the profile comes from SEC (503 on an outage must not roll back).
+c=$(code "$LAB/lab/reference"); [ "$c" = 200 ] && pass "/lab/reference page" || bad "/lab/reference page" "got $c"
+b=$(curl -s --max-time 30 "$LAB/api/lab/reference"); echo "$b" | grep -q '"id":"berkshire"' && pass "reference list" || bad "reference list" "$(echo "$b" | head -c 150)"
+c=$(code "$LAB/api/lab/reference/nobody"); [ "$c" = 404 ] && pass "unknown reference rejected" || bad "unknown reference rejected" "got $c"
+b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/reference/berkshire"); c=${b##*$'\n'}
+if [ "$c" = 200 ]; then echo "$b" | grep -q '"rule_draft"' && pass "Berkshire 13F profile (200)" || bad "Berkshire 13F profile" "200 without rule_draft"
+elif [ "$c" = 503 ]; then pass "13F profile unavailable right now (503, SEC)"; else bad "Berkshire 13F profile" "got $c"; fi
 
 # The main site must be unaffected.
 c=$(code "https://${DOMAIN}/en/"); [ "$c" = 200 ] && pass "main site /en/" || bad "main site /en/" "got $c"

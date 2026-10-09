@@ -57,6 +57,17 @@ export type CalendarResponse = {
   today: string;
   items: { ticker: string; last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }[];
 };
+export type ReferenceItem = { id: string; name: { en: string; zh: string } };
+export type RefRow = { issuer: string; title_class: string; value_usd: number; weight: number };
+export type RefChange = { issuer: string; title_class: string; weight_before: number; weight_after: number; shares_change_pct: number | null };
+export type ReferenceProfile = {
+  id: string; name: string; filer: string; cik: string; period: string; filed: string; accession: string; filing_url: string;
+  total_value_usd: number; option_lines_excluded: number;
+  concentration: { positions: number; top1: number; top3: number; top5: number; top10: number };
+  top: RefRow[]; previous_period: string | null;
+  changes: Record<"new" | "exited" | "increased" | "decreased", RefChange[]> | null;
+  rule_draft: string;
+};
 export type MemoAnswers = {
   reasons: string[]; target_weight_pct: number | null; responses: Partial<Record<"E1" | "E2" | "E3", string>>;
   invalidation: string[]; review_date: string | null; review_focus: string;
@@ -113,6 +124,8 @@ export const api = {
   nextEarnings: (ticker: string) =>
     call<{ last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }>(
       `/api/lab/companies/${encodeURIComponent(ticker)}/next-earnings`),
+  referenceList: () => call<ReferenceItem[]>("/api/lab/reference"),
+  reference: (id: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/${encodeURIComponent(id)}?lang=${lang}`),
   macro: () => call<MacroResponse>("/api/lab/macro"),
   calendar: () => call<CalendarResponse>("/api/lab/calendar"),
   theses: (ticker: string, lang: string) =>

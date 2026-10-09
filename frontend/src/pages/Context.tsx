@@ -62,13 +62,28 @@ export function MacroStrip({ collapsible = false }: { collapsible?: boolean }) {
   );
 }
 
-/** "Next earnings: about …" for one company; silently absent when the estimate is unavailable. */
+/** The next earnings date as a callout that is noticed at first glance. An estimate; absent when unavailable. */
 export function NextEarnings({ ticker }: { ticker: string }) {
   const { t } = useLang();
-  const [next, setNext] = useState<{ estimated: string; past: boolean } | null>(null);
+  const [next, setNext] = useState<{ estimated: string; last_reported: string; past: boolean } | null>(null);
   useEffect(() => {
     setNext(null);
     api.nextEarnings(ticker).then(setNext).catch(() => setNext(null));
   }, [ticker]);
-  return next ? <p className="muted small">{t.mmNext(next.estimated, next.past)}</p> : null;
+  if (!next) return null;
+  const days = Math.round((Date.parse(next.estimated + "T00:00:00Z") - Date.parse(new Date().toISOString().slice(0, 10) + "T00:00:00Z")) / 86400000);
+  return (
+    <div className={`nextearn${next.past ? " past" : days <= 14 ? " soon" : ""}`} role="note">
+      <span className="ne-label">{t.neLabel(ticker)}</span>
+      {next.past ? (
+        <span className="ne-date">{t.nePast}</span>
+      ) : (
+        <>
+          <span className="ne-date">{next.estimated}</span>
+          <span className="ne-days">{t.neDays(days)}</span>
+        </>
+      )}
+      <span className="ne-est">{t.neEst(next.last_reported)}</span>
+    </div>
+  );
 }

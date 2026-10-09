@@ -43,6 +43,8 @@ class Settings(BaseModel):
     # Macro charts (public FRED series); the switch lets a bad deploy turn the download off without a release.
     macro_enabled: bool = True
     macro_ttl_seconds: int = 6 * 3600
+    # 13F reference portfolios change once a quarter.
+    reference_ttl_seconds: int = 12 * 3600
 
     @classmethod
     def from_env(cls) -> "Settings":

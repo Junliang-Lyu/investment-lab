@@ -8,6 +8,7 @@ manager allocates, not when they traded.
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import date
@@ -149,3 +150,32 @@ def diff(prev: Portfolio13F, cur: Portfolio13F) -> list[Change]:
 def concentration(p: Portfolio13F) -> dict[str, float]:
     ws = sorted((p.weight(h) for h in p.holdings), reverse=True)
     return {"positions": float(len(ws)), "top1": sum(ws[:1]), "top5": sum(ws[:5]), "top10": sum(ws[:10])}
+
+
+_CLASS_TAIL = re.compile(r"\s+(CLASS|CL)\s+[A-Z0-9]{1,2}\b.*$")
+
+
+def issuer_key(name: str) -> str:
+    """Same company across share classes: 'ALPHABET INC CL A' and 'ALPHABET INC CL C' are one issuer."""
+    n = _CLASS_TAIL.sub("", re.sub(r"[.,]", "", name.upper()))
+    return " ".join(n.split())
+
+
+def equity_only(p: Portfolio13F) -> tuple[Portfolio13F, int]:
+    """Without put/call lines: those are reported at the value of the underlying shares, which is not money invested.
+    Returns the portfolio and how many option lines were dropped."""
+    keep = [h for h in p.holdings if not h.put_call]
+    return p.model_copy(update={"holdings": keep}), len(p.holdings) - len(keep)
+
+
+def by_issuer(p: Portfolio13F) -> Portfolio13F:
+    """Merge share classes of one company, so that 'top 5' counts companies, not tickers. Use on equity_only()."""
+    merged: dict[str, Holding13F] = {}
+    for h in sorted(p.holdings, key=lambda x: x.value_usd, reverse=True):
+        k = issuer_key(h.issuer)
+        if k in merged:
+            m = merged[k]
+            merged[k] = m.model_copy(update={"value_usd": m.value_usd + h.value_usd, "shares": m.shares + h.shares})
+        else:
+            merged[k] = h  # the largest line names the issuer
+    return p.model_copy(update={"holdings": sorted(merged.values(), key=lambda x: x.value_usd, reverse=True)})

@@ -4,7 +4,7 @@ import { navigate } from "../App";
 import { Strings, useLang } from "../i18n";
 import { forgetMemo, rememberMemo } from "../memos";
 import { Claim } from "./Skeptic";
-import { MacroStrip } from "./Context";
+import { MacroStrip, NextEarnings } from "./Context";
 
 const ES = ["E1", "E2", "E3"] as const;
 const STEP_OF: Record<string, number> = { skeptic_done: 1, user_responded: 2, reviewed: 3, final: 4 };
@@ -152,6 +152,7 @@ export default function MemoPage({ id }: { id: string }) {
           <li key={s} className={i < step ? "done" : i === step ? "now" : ""}><span className="num">{i + 1}</span>{s}</li>
         ))}
       </ol>
+      <NextEarnings ticker={memo.ticker} />
       <div className="linkbar">
         <p className="muted small">{t.mmLinkNote(memo.expires_at)}</p>
         <div className="actions">

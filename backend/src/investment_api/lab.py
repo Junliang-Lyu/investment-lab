@@ -23,6 +23,7 @@ from investment_core.segments import member_label, segment_series
 from .earnings import estimate_next_earnings
 from .i18n import translate_findings, translate_gate
 from .macro import MacroService
+from .reference import REFERENCE, profile, reference_by_id
 from .ratelimit import RateLimiter
 
 log = logging.getLogger("investment_api.lab")
@@ -198,6 +199,35 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
             raise HTTPException(503, "Could not read the filing lists right now.")
         rows.sort(key=lambda x: (x["past"], x["estimated"]))
         return {"today": today.isoformat(), "items": rows}
+
+    ref_cache: dict[str, tuple[float, list]] = {}
+    ref_lock = threading.Lock()
+
+    @r.get("/reference")
+    def reference_list():
+        return [{"id": x["id"], "name": {"en": x["en"], "zh": x["zh"]}} for x in REFERENCE]
+
+    @r.get("/reference/{rid}")
+    def reference_profile(rid: str, lang: Literal["zh", "en"] = Query("en")):
+        """13F summary of one well-known institution (see reference.py). Quarterly data, cached for hours."""
+        entry = reference_by_id(rid)
+        if entry is None:
+            raise HTTPException(404, "Unknown reference portfolio.")
+        with ref_lock:
+            hit = ref_cache.get(rid)
+            if hit and time.monotonic() - hit[0] < settings.reference_ttl_seconds:
+                pfs = hit[1]
+            else:
+                try:
+                    from investment_data.thirteenf import load_portfolios
+                    pfs = load_portfolios(client_factory(), entry["cik"], quarters=2)
+                except Exception as e:
+                    log.warning("reference %s: SEC fetch failed: %s", rid, e)
+                    raise HTTPException(503, "Could not read the 13F filings right now.")
+                if not pfs:
+                    raise HTTPException(404, "No 13F filings found.")
+                ref_cache[rid] = (time.monotonic(), pfs)
+        return profile(entry, pfs, lang)
 
     macro = MacroService(settings.macro_ttl_seconds, fetch=macro_fetch)
 
