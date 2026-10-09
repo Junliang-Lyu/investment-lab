@@ -70,8 +70,14 @@ export type ReferenceProfile = {
   top: RefRow[]; previous_period: string | null;
   changes: Record<"new" | "exited" | "increased" | "decreased", RefChange[]> | null;
   rule_draft: string; draft_values: { single_max: number; top3_max: number };
+  sample: { positions: { symbol: string; issuer: string; real: boolean; weight: number }[]; share_of_reported: number };
   about: string | null; note: string | null; sources: RefSource[]; custom: boolean;
 };
+export type RefReading =
+  | { ok: true; cached: boolean; evaluated: false; period: string; model: string | null; prompt_version: string;
+      result: { structure: string[]; cautions: string[]; questions: string[];
+                rule_ideas: { rule_code: string; idea: string; question: string; their_value: string | null }[] } }
+  | { ok: false; reason: string; evaluated: boolean };
 export type MemoAnswers = {
   reasons: string[]; target_weight_pct: number | null; responses: Partial<Record<"E1" | "E2" | "E3", string>>;
   invalidation: string[]; review_date: string | null; review_focus: string;
@@ -132,6 +138,8 @@ export const api = {
   referenceList: () => call<ReferenceItem[]>("/api/lab/reference"),
   referenceByCik: (cik: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/cik/${encodeURIComponent(cik)}?lang=${lang}`),
   reference: (id: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/${encodeURIComponent(id)}?lang=${lang}`),
+  readReference: (id: string, lang: string) =>
+    call<RefReading>(`/api/lab/reference/${encodeURIComponent(id)}/read?lang=${lang}`, { method: "POST" }),
   macro: () => call<MacroResponse>("/api/lab/macro"),
   calendar: () => call<CalendarResponse>("/api/lab/calendar"),
   theses: (ticker: string, lang: string) =>

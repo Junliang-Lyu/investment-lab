@@ -271,3 +271,23 @@ form.skeptic .tickerfield { flex-direction: row; align-items: center; gap: 8px; 
 .refsources { list-style: none; padding: 0; margin: 6px 0; } .refsources li { padding: 4px 0; }
 input.narrow { width: 5em; }
 .refchanges h4 { margin: 4px 0; font-size: 1rem; }
+
+/* institution picker: wrapped pill chips */
+.refsearch { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 14px 0 10px; }
+.refsearch input.grow { flex: 1 1 260px; max-width: 420px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; }
+.chip { font: inherit; font-size: 0.9rem; padding: 5px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text); cursor: pointer; line-height: 1.3; }
+.chip:hover { border-color: var(--accent); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* gate: reference institutions */
+.cards.refs { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.cards.refs .card { padding: 12px 14px; }
+.cards.refs h2 { font-size: 1rem; margin: 0 0 4px; }
+
+.reading h3 { margin: 16px 0 6px; font-size: 1rem; }
+.reading ul, .reading ol { margin: 4px 0; padding-left: 20px; } .reading li { margin-bottom: 6px; }
+.reading .cards { margin: 8px 0 12px; }
+.card.static { cursor: default; } .card.static:hover { border-color: var(--line); }
+.card.static h4 { margin: 0 0 6px; font-size: 0.95rem; }

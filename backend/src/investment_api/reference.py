@@ -4,7 +4,9 @@ arithmetic on the filed tables, and the rule draft only copies what the filer ho
 
 from __future__ import annotations
 
-from investment_core.thirteenf import Portfolio13F, by_issuer, concentration, diff, equity_only
+import re
+
+from investment_core.thirteenf import Portfolio13F, by_issuer, concentration, diff, equity_only, issuer_key
 
 # A fixed list keeps SEC traffic bounded; any other 13F filer can be looked up by CIK (rate-limited, see lab.py).
 # `expect` is a fragment of the name the SEC reports for the CIK (checked against the live SEC in the release
@@ -117,13 +119,50 @@ def rule_draft(filer: str, period: str, conc: dict, lang: str) -> str:
     return "\n".join(head + ["version: draft-13f", "status: draft", "rules:"] + rules) + "\n"
 
 
+SAMPLE_N = 10
+_SLASH = re.compile(r"\s*/[A-Z]{1,4}/?\s*$")
+
+
+def ticker_index(ticker_map: dict[str, dict]) -> dict[str, str]:
+    """Company name (as `issuer_key` writes it) -> ticker, from the SEC's list. The first ticker listed wins, so
+    when a company has several (share classes) the larger one is used. Best effort: names are not unique keys."""
+    out: dict[str, str] = {}
+    for tk, row in ticker_map.items():
+        key = issuer_key(_SLASH.sub("", str(row.get("title", ""))))
+        if key and key not in out:
+            out[key] = tk
+    return out
+
+
+def sample(merged: Portfolio13F, index: dict[str, str] | None, n: int = SAMPLE_N) -> dict:
+    """The top `n` companies renormalised to 100%: a stand-in portfolio to try in the pre-trade gate. A company whose
+    ticker cannot be matched gets a made-up label (`real: false`), only so it can be told apart in the table."""
+    top = merged.top(n)
+    total = sum(h.value_usd for h in top) or 1.0
+    used: set[str] = set()
+    rows = []
+    for h in top:
+        sym = (index or {}).get(issuer_key(h.issuer))
+        real = bool(sym and re.fullmatch(r"[A-Z][A-Z.\-]{0,9}", sym))
+        if not real:
+            letters = re.sub(r"[^A-Z]", "", issuer_key(h.issuer))[:10] or "X"
+            sym = letters
+        base, k = sym, 0
+        while sym in used:  # symbols are letters only in the gate: tell twins apart with a trailing letter
+            k += 1
+            sym = base[: 9] + "BCDEFGHIJ"[(k - 1) % 9]
+        used.add(sym)
+        rows.append({"symbol": sym, "issuer": h.issuer, "real": real, "weight": round(h.value_usd / total, 4)})
+    return {"positions": rows, "share_of_reported": round(sum(h.value_usd for h in top) / (merged.total_value or 1.0), 4)}
+
+
 def _row(h, p: Portfolio13F, classes: dict[str, str]) -> dict:
     return {"issuer": h.issuer, "title_class": classes.get(h.cusip, h.title_class), "value_usd": round(h.value_usd),
             "weight": round(p.weight(h), 4)}
 
 
-def profile(entry: dict, portfolios: list[Portfolio13F], lang: str) -> dict:
-    """`portfolios` newest first (one or two quarters)."""
+def profile(entry: dict, portfolios: list[Portfolio13F], lang: str, tickers: dict[str, str] | None = None) -> dict:
+    """`portfolios` newest first (one or two quarters). `tickers` (see ticker_index) lets the sample carry real symbols."""
     cur_raw = portfolios[0]
     cur, options = equity_only(cur_raw)
     merged = by_issuer(cur)
@@ -137,6 +176,7 @@ def profile(entry: dict, portfolios: list[Portfolio13F], lang: str) -> dict:
         "total_value_usd": round(merged.total_value), "option_lines_excluded": options,
         "concentration": {k: round(v, 4) if k != "positions" else int(v) for k, v in conc.items()},
         "top": [_row(h, merged, classes) for h in merged.top(15)],
+        "sample": sample(merged, tickers),
         "previous_period": None, "changes": None,
         "rule_draft": rule_draft(cur_raw.filer, cur_raw.period.isoformat(), conc, lang),
         "draft_values": {"single_max": round(conc["top1"], 2), "top3_max": round(conc["top3"], 2)},

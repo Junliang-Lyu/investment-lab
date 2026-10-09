@@ -38,6 +38,7 @@ log = logging.getLogger("investment_api.skeptic")
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _TICKER = re.compile(r"^[A-Z][A-Z\-]{0,9}$")
 EXPLAIN_MARK = "__explain__"  # stored in `thesis` for quarter explanations: counted separately from skeptic requests
+READ_MARK = "__refread__"  # the 13F structure reader: its own count as well
 
 
 def norm_ticker(text: str) -> str:
@@ -128,12 +129,14 @@ class LabStore:
         return max(0.0, min(self.daily_budget - self.spent_today(), self.monthly_budget - self.spent_this_month()))
 
     # -- visitor requests ---------------------------------------------------------------------------
-    def requests_today(self, ip_hash: str, explain: bool = False) -> int:
+    def requests_today(self, ip_hash: str, explain: bool = False, mark: str | None = None) -> int:
+        """New (uncached) requests today by one visitor: skeptic theses, or those of one kind (`explain`, or `mark`)."""
         start = self.clock().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        op = "=" if explain else "!="
+        mark = mark or (EXPLAIN_MARK if explain else None)
+        cond, args = ("thesis = ?", (mark,)) if mark else ("thesis NOT IN (?, ?)", (EXPLAIN_MARK, READ_MARK))
         with self._db() as db:
-            return db.execute(f"SELECT COUNT(*) FROM requests WHERE ip_hash=? AND at>=? AND cached=0 AND thesis {op} ?",
-                              (ip_hash, start, EXPLAIN_MARK)).fetchone()[0]
+            return db.execute(f"SELECT COUNT(*) FROM requests WHERE ip_hash=? AND at>=? AND cached=0 AND {cond}",
+                              (ip_hash, start, *args)).fetchone()[0]
 
     def recently_failed(self, cache_key: str, hours: int = 6) -> bool:
         """A failed attempt for this key in the last hours (a company that fails is not retried by every visitor)."""

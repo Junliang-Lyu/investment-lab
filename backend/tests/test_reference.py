@@ -91,14 +91,19 @@ def test_reference_endpoints():
 def test_reference_is_cached_and_survives_nothing_but_503_on_failure():
     made = []
 
+    class Counting(FakeClient):
+        def submissions(self, cik):
+            made.append(1)
+            return super().submissions(cik)
+
     def factory():
-        made.append(1)
-        return FakeClient()
+        return Counting()
 
     c = client(factory)
     assert c.get("/api/lab/reference/berkshire").status_code == 200
+    after_first = len(made)
     assert c.get("/api/lab/reference/berkshire?lang=zh").status_code == 200
-    assert len(made) == 1  # the second visit (other language) is served from memory
+    assert after_first > 0 and len(made) == after_first  # the second visit (other language) reads no filing again: served from memory
 
     class Down:
         def submissions(self, cik):

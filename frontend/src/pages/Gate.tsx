@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, CustomPortfolio, DemoPortfolio, GateResult } from "../api";
+import { api, CustomPortfolio, DemoPortfolio, GateResult, ReferenceItem, ReferenceProfile } from "../api";
 import { pct, usd } from "../format";
 import { useLang } from "../i18n";
 import { savedMemos } from "../memos";
@@ -17,6 +17,7 @@ function loadHoldings(): CustomPortfolio {
 }
 
 const sectionNo = (s: string) => Number(/§(\d+)/.exec(s)?.[1] ?? 99);
+const REF_NOTIONAL = 10_000;
 const OVERALL_CLS: Record<GateResult["overall"], string> = { clear: "ok", incomplete: "info", warnings: "warn", rule_breaks: "bad" };
 
 export default function Gate() {
@@ -38,7 +39,29 @@ export default function Gate() {
   });
   const [result, setResult] = useState<GateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refList, setRefList] = useState<ReferenceItem[]>([]);
+  const [refData, setRefData] = useState<Record<string, ReferenceProfile>>({});
+  const [refBusy, setRefBusy] = useState<string | null>(null);
+  const [refFail, setRefFail] = useState<string | null>(null);
 
+  useEffect(() => { api.referenceList().then(setRefList).catch(() => setRefList([])); }, []);
+  const refId = pid.startsWith("ref:") ? pid.slice(4) : null;
+  const refProfile = refId ? refData[refId] : undefined;
+  // the institution's real weights as a stand-in portfolio: kept apart from "my holdings", never saved
+  const refHoldings: CustomPortfolio | null = refProfile ? {
+    cash: 0,
+    positions: refProfile.sample.positions.map((x) => ({ symbol: x.symbol, market_value: Math.round(x.weight * REF_NOTIONAL * 100) / 100, sleeve: "satellite" as const })),
+  } : null;
+  async function pickRef(id: string) {
+    setResult(null); setRefFail(null);
+    if (refData[id]) { setPid(`ref:${id}`); return; }
+    setRefBusy(id);
+    try {
+      const d = await api.reference(id, lang);
+      setRefData((m) => ({ ...m, [id]: d }));
+      setPid(`ref:${id}`);
+    } catch { setRefFail(id); } finally { setRefBusy(null); }
+  }
   useEffect(() => { api.demoPortfolios(lang).then(setPortfolios).catch((e) => setError(String(e.message ?? e))); }, [lang]);
   const portfolio = useMemo(() => portfolios.find((p) => p.id === pid), [portfolios, pid]);
   const customNav = holdings.cash + holdings.positions.reduce((a, p) => a + (p.market_value || 0), 0);
@@ -53,9 +76,10 @@ export default function Gate() {
     setError(null);
     try {
       setResult(await api.gate(lang, {
-        portfolio_id: pid, symbol, side, amount_usd: amount, attestations: nextAttest,
+        portfolio_id: refId ? "custom" : pid, symbol, side, amount_usd: amount, attestations: nextAttest,
         ...(memoId ? { memo_id: memoId } : {}),
         ...(limits ? { limits } : {}),
+        ...(refHoldings ? { custom: refHoldings } : {}),
         ...(pid === "custom" ? { custom: { cash: holdings.cash, positions: holdings.positions.filter((p) => p.symbol && p.market_value > 0) } } : {}),
       }));
     } catch (e) { setResult(null); setError(String((e as Error).message ?? e)); }
@@ -108,6 +132,34 @@ export default function Gate() {
         </button>
       </div>
 
+      {refList.length > 0 && (
+        <>
+          <h2 className="h2">{t.gtRefTitle}</h2>
+          <p className="muted small">{t.gtRefLede}</p>
+          <div className="cards refs">
+            {refList.map((x) => {
+              const d = refData[x.id];
+              return (
+                <button key={x.id} type="button" className={`card ${refId === x.id ? "selected" : ""}`} aria-pressed={refId === x.id} onClick={() => pickRef(x.id)}>
+                  <h2>{x.name[lang]}</h2>
+                  {d ? (
+                    <ul className="positions">
+                      {d.sample.positions.slice(0, 5).map((p) => (
+                        <li key={p.symbol} title={p.issuer}><span>{p.real ? p.symbol : p.issuer.slice(0, 14)}</span><span>{pct(p.weight)}</span></li>
+                      ))}
+                      <li className="muted"><span>…</span><span>{d.sample.positions.length}</span></li>
+                    </ul>
+                  ) : (
+                    <p className="small muted">{refBusy === x.id ? t.gtRefLoading : refFail === x.id ? t.gtRefFail : t.gtRefLoad}</p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {refProfile && <p className="muted small">{t.gtRefNote(refProfile.filer, refProfile.period, refProfile.sample.share_of_reported)}</p>}
+        </>
+      )}
+
       {pid === "custom" && (
         <div className="holdings">
           <table>
@@ -139,7 +191,7 @@ export default function Gate() {
         </div>
       )}
 
-      {(portfolio || pid === "custom") && (
+      {(portfolio || pid === "custom" || refHoldings) && (
         <form className="trade" onSubmit={(e) => { e.preventDefault(); setAttest({}); run({}); }}>
           <label>{t.side} <select value={side} onChange={(e) => setSide(e.target.value as "buy" | "sell")}><option value="buy">{t.buy}</option><option value="sell">{t.sell}</option></select></label>
           <label>{t.symbol} <input value={symbol} maxLength={10} onChange={(e) => { setSymbol(e.target.value.toUpperCase()); setMemoId(""); }} /></label>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -23,7 +24,7 @@ from investment_core.segments import member_label, segment_series
 from .earnings import estimate_next_earnings
 from .i18n import translate_findings, translate_gate
 from .macro import MacroService
-from .reference import REFERENCE, custom_entry, directory, profile, reference_by_id
+from .reference import REFERENCE, custom_entry, directory, profile, reference_by_id, ticker_index
 from .ratelimit import RateLimiter
 
 log = logging.getLogger("investment_api.lab")
@@ -254,6 +255,23 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
                     ref_cache.pop(ref_custom_keys.pop(0), None)
             return pfs
 
+    tick_cache: dict = {"at": 0.0, "idx": None}
+
+    def _tickers():
+        """Company name -> ticker for the gate sample, kept a day; None when the SEC list cannot be read (the sample
+        then carries made-up labels, flagged as such)."""
+        with ref_lock:
+            if tick_cache["idx"] is not None and time.monotonic() - tick_cache["at"] < 86400:
+                return tick_cache["idx"]
+        try:
+            idx = ticker_index(client_factory().ticker_map())
+        except Exception as e:
+            log.warning("reference: ticker list unavailable: %s", e)
+            return tick_cache["idx"]
+        with ref_lock:
+            tick_cache.update(at=time.monotonic(), idx=idx)
+        return idx
+
     @r.get("/reference")
     def reference_list():
         return directory()
@@ -265,9 +283,9 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
             raise HTTPException(422, "A CIK is up to 10 digits.")
         known = next((x for x in REFERENCE if int(x["cik"]) == int(cik)), None)
         if known:
-            return profile(known, _ref_portfolios(known["id"], known["cik"], None), lang)
+            return profile(known, _ref_portfolios(known["id"], known["cik"], None), lang, _tickers())
         pfs = _ref_portfolios(f"cik{int(cik)}", cik, request)
-        return profile(custom_entry(pfs[0].cik, pfs[0].filer), pfs, lang)
+        return profile(custom_entry(pfs[0].cik, pfs[0].filer), pfs, lang, _tickers())
 
     @r.get("/reference/{rid}")
     def reference_profile(rid: str, lang: Literal["zh", "en"] = Query("en")):
@@ -275,7 +293,7 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
         entry = reference_by_id(rid)
         if entry is None:
             raise HTTPException(404, "Unknown reference portfolio.")
-        return profile(entry, _ref_portfolios(rid, entry["cik"], None), lang)
+        return profile(entry, _ref_portfolios(rid, entry["cik"], None), lang, _tickers())
 
     macro = MacroService(settings.macro_ttl_seconds, fetch=macro_fetch)
 
@@ -413,6 +431,70 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
         from investment_ai.providers import AnthropicProvider
         provider_factory = AnthropicProvider
     sk = add_skeptic_routes(r, settings, client_factory, fetch_lock, provider_factory)
+
+    @r.post("/reference/{rid}/read")
+    def reference_read(rid: str, request: Request, lang: Literal["zh", "en"] = Query("en")):
+        """AI reading of one institution's portfolio STRUCTURE (investment_ai.reference_reader): the model explains and
+        asks questions; every number is filled in by code. Cached per filer, language and quarter for everyone."""
+        import hashlib
+        import uuid
+        from investment_ai.reference_reader import READER_VERSION, metrics, render, run_reader
+        from investment_ai.reference_reader import Reading
+        from .skeptic import READ_MARK
+        ok, reason = sk.enabled()
+        if not ok:
+            raise HTTPException(503, reason)
+        store = sk.store
+        m = re.fullmatch(r"cik(\d{1,10})", rid)
+        if m:
+            pfs = _ref_portfolios(rid, m.group(1), request)
+            entry = custom_entry(pfs[0].cik, pfs[0].filer)
+        else:
+            entry = reference_by_id(rid)
+            if entry is None:
+                raise HTTPException(404, "Unknown reference portfolio.")
+            pfs = _ref_portfolios(rid, entry["cik"], None)
+        values = metrics(pfs)
+        about = (entry.get("about") or {}).get(lang)
+        key = hashlib.sha256(f"refread|{int(pfs[0].cik)}|{lang}|{pfs[0].period}|{READER_VERSION}".encode()).hexdigest()
+        ip_hash = sk.visitor(request)
+
+        def shown(hit: dict, cached: bool) -> dict:
+            return {"ok": True, "cached": cached, "evaluated": False, "period": values["period"],
+                    "result": render(Reading.model_validate(hit["output"]), values),
+                    "model": hit["model"], "prompt_version": hit["prompt_version"]}
+
+        hit = store.cached(key)
+        if hit is not None:
+            return shown(hit, True)
+        if store.recently_failed(key):
+            return {"ok": False, "reason": "unavailable", "evaluated": False}
+        if store.requests_today(ip_hash, mark=READ_MARK) >= settings.reader_per_ip_daily:
+            raise HTTPException(429, "Daily limit of new AI readings reached. Please come back tomorrow.")
+        if store.remaining_today() <= settings.explain_reserve_usd:
+            raise HTTPException(503, "Today's AI budget is used up. Please try again tomorrow.")
+        base = dict(id=uuid.uuid4().hex, at=store.clock().isoformat(), ip_hash=ip_hash, ticker=f"13F-{int(pfs[0].cik)}"[:20],
+                    lang=lang, thesis=READ_MARK, cache_key=key)
+        with sk.model_lock:
+            hit = store.cached(key)
+            if hit is not None:
+                return shown(hit, True)
+            result = run_reader(pfs[0].filer, about, values, sk.provider_factory(), store, language=lang)
+        cost = sum(x.cost_usd for x in result.runs)
+        last = result.runs[-1] if result.runs else None
+        status_ = "ok" if result.ok else (last.status if last and last.status in ("budget_blocked", "error") else "invalid")
+        store.add_request(**base, cached=0, status=status_, cost=cost, attempts=len(result.runs),
+                          model=last.model if last else None, prompt_version=READER_VERSION,
+                          output=json.dumps(result.output.model_dump()) if result.ok else None,
+                          validation=json.dumps({"problems": result.problems}) if not result.ok else None, error=result.error)
+        if status_ == "budget_blocked":
+            raise HTTPException(503, "Today's AI budget is used up. Please try again tomorrow.")
+        if status_ == "error":
+            log.warning("reference read %s: model error: %s", rid, result.error)
+            raise HTTPException(502, "The AI model is unavailable right now. Please try again later.")
+        if not result.ok:
+            return {"ok": False, "reason": "unavailable", "evaluated": False}
+        return shown({"output": result.output.model_dump(), "model": last.model, "prompt_version": READER_VERSION}, False)
     from .memo_lab import add_memo_routes
     memos["store"] = add_memo_routes(r, settings, sk)
     return r

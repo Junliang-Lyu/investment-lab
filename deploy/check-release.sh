@@ -92,8 +92,11 @@ b=$(curl -s --max-time 30 "$LAB/api/lab/reference"); echo "$b" | grep -q '"id":"
 c=$(code "$LAB/api/lab/reference/nobody"); [ "$c" = 404 ] && pass "unknown reference rejected" || bad "unknown reference rejected" "got $c"
 c=$(code "$LAB/api/lab/reference/cik/notacik"); [ "$c" = 422 ] && pass "bad CIK rejected" || bad "bad CIK rejected" "got $c"
 b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/reference/berkshire"); c=${b##*$'\n'}
-if [ "$c" = 200 ]; then echo "$b" | grep -q '"rule_draft"' && pass "Berkshire 13F profile (200)" || bad "Berkshire 13F profile" "200 without rule_draft"
+if [ "$c" = 200 ]; then echo "$b" | grep -q '"rule_draft"' && echo "$b" | grep -q '"sample"' && pass "Berkshire 13F profile with gate sample (200)" || bad "Berkshire 13F profile" "200 without rule_draft or sample"
 elif [ "$c" = 503 ]; then pass "13F profile unavailable right now (503, SEC)"; else bad "Berkshire 13F profile" "got $c"; fi
+
+# The AI reading is click-only (it costs money): only its guards are checked, never a real reading.
+c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST "$LAB/api/lab/reference/nobody/read"); [ "$c" = 404 ] || [ "$c" = 503 ] && pass "AI reading: unknown institution refused ($c)" || bad "AI reading guard" "got $c"
 
 # The main site must be unaffected.
 c=$(code "https://${DOMAIN}/en/"); [ "$c" = 200 ] && pass "main site /en/" || bad "main site /en/" "got $c"

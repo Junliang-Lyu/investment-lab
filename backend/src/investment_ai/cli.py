@@ -123,8 +123,44 @@ def main(argv: list[str] | None = None, *, provider=None, client=None, ledger=No
     ex.add_argument("ticker")
     ex.add_argument("--provider", default="anthropic", choices=["anthropic", "gemini"])
     ex.add_argument("--lang", default="zh", choices=["zh", "en"])
+    rs = sub.add_parser("explain-structure", help="try the 13F structure reader on one institution (about $0.01)")
+    rs.add_argument("who", help="a reference id (berkshire, ark, hh, ...) or a CIK number")
+    rs.add_argument("--provider", default="anthropic", choices=["anthropic", "gemini"])
+    rs.add_argument("--lang", default="zh", choices=["zh", "en"])
     args = ap.parse_args(argv)
     load_env_file()
+
+    if args.cmd == "explain-structure":
+        from investment_api.reference import REFERENCE
+        from investment_data.thirteenf import load_portfolios
+        from .reference_reader import metrics, render, run_reader
+        known = next((x for x in REFERENCE if x["id"] == args.who), None)
+        cik = known["cik"] if known else args.who
+        client = client or EdgarClient(cache_dir=DEFAULT_CACHE)
+        pfs = load_portfolios(client, cik, quarters=2)
+        if not pfs:
+            print("no 13F found for", cik)
+            return 1
+        values = metrics(pfs)
+        about = ((known or {}).get("about") or {}).get(args.lang)
+        result = run_reader(pfs[0].filer, about, values, provider or make_provider(args.provider),
+                            ledger or Ledger(eval_budget=True), language=args.lang, surface="eval")
+        cost = sum(r.cost_usd for r in result.runs)
+        print(f"{pfs[0].filer} ok={result.ok} attempts={len(result.runs)} cost=${cost:.4f} period={values['period']}")
+        if not result.ok:
+            print("failed:", result.error)
+            for p in result.problems:
+                print("  -", p)
+            return 1
+        out = render(result.output, values)
+        for title, items in (("STRUCTURE", out["structure"]), ("CAUTIONS", out["cautions"]), ("QUESTIONS", out["questions"])):
+            print(f"-- {title}")
+            for x in items:
+                print("  *", x)
+        print("-- RULE IDEAS")
+        for x in out["rule_ideas"]:
+            print(f"  [{x['rule_code']}] their value: {x['their_value']}\n     idea: {x['idea']}\n     question: {x['question']}")
+        return 0
 
     if args.cmd == "explain-quarter":
         from .explain import run_explainer

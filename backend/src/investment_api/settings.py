@@ -39,6 +39,7 @@ class Settings(BaseModel):
     # Quarter explanations on the company page: a visitor quota of their own, and part of the day's budget stays
     # reserved for the skeptic (explanations stop when less than this is left today).
     explain_per_ip_daily: int = 5
+    reader_per_ip_daily: int = 5
     explain_reserve_usd: float = 0.15
     # Macro charts (public FRED series); the switch lets a bad deploy turn the download off without a release.
     macro_enabled: bool = True
@@ -69,6 +70,7 @@ class Settings(BaseModel):
                                  ("LAB_CUSTOM_PER_IP_DAILY", "custom_per_ip_daily", int),
                                  ("LAB_CUSTOM_GLOBAL_DAILY", "custom_global_daily", int),
                                  ("LAB_EXPLAIN_PER_IP_DAILY", "explain_per_ip_daily", int),
+                                 ("LAB_READER_PER_IP_DAILY", "reader_per_ip_daily", int),
                                  ("LAB_EXPLAIN_RESERVE_USD", "explain_reserve_usd", float),
                                  ("LAB_MACRO_TTL_SECONDS", "macro_ttl_seconds", int)]:
             if os.environ.get(env):

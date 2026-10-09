@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { api, ReferenceItem, ReferenceProfile } from "../api";
+import { api, RefReading, ReferenceItem, ReferenceProfile } from "../api";
 import { navigate } from "../App";
 import { pct, usd } from "../format";
 import { useLang } from "../i18n";
@@ -30,8 +30,18 @@ export default function Reference() {
   const [copied, setCopied] = useState(false);
   const [single, setSingle] = useState("");
   const [top3, setTop3] = useState("");
+  const [reading, setReading] = useState<RefReading | null>(null);
+  const [reading_busy, setReadingBusy] = useState(false);
+  const [readingErr, setReadingErr] = useState<string | null>(null);
+  const [aiOn, setAiOn] = useState(false);
 
   useEffect(() => { api.referenceList().then(setList).catch(() => setList([])); }, []);
+  useEffect(() => { api.skepticStatus().then((s) => setAiOn(Boolean(s.enabled))).catch(() => setAiOn(false)); }, []);
+  useEffect(() => { setReading(null); setReadingErr(null); }, [id, lang]);
+  const readIt = () => {
+    setReadingBusy(true); setReadingErr(null); setReading(null);
+    api.readReference(id, lang).then(setReading).catch((e) => setReadingErr(String(e.message ?? e))).finally(() => setReadingBusy(false));
+  };
   useEffect(() => {
     setLoading(true); setError(null); setData(null);
     const req = id.startsWith("cik") ? api.referenceByCik(id.slice(3), lang) : api.reference(id, lang);
@@ -69,20 +79,20 @@ export default function Reference() {
       <p className="lede">{t.refLede}</p>
       <p className="notice small">{t.refLimits}</p>
 
-      <div className="toolbar">
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.refSearchPh} aria-label={t.refSearch} size={28} />
+      <div className="refsearch">
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.refSearchPh} aria-label={t.refSearch} size={28} className="grow" />
         <form className="inline" onSubmit={loadCik}>
-          <input value={cikIn} onChange={(e) => setCikIn(e.target.value)} placeholder={t.refCikPh} aria-label={t.refCik} inputMode="numeric" maxLength={10} size={14} />{" "}
-          <button type="submit" className="secondary">{t.refCikGo}</button>
+          <input value={cikIn} onChange={(e) => setCikIn(e.target.value)} placeholder={t.refCikPh} aria-label={t.refCik} inputMode="numeric" maxLength={10} size={14} />
+          <button type="submit">{t.refCikGo}</button>
         </form>
       </div>
-      <div className="spanbar wrapbar" role="group" aria-label={t.refPick}>
+      <div className="chips" role="group" aria-label={t.refPick}>
         {shown.map((x) => (
-          <button key={x.id} type="button" className={id === x.id ? "on" : ""} aria-pressed={id === x.id} onClick={() => setId(x.id)}>
+          <button key={x.id} type="button" className={`chip${id === x.id ? " on" : ""}`} aria-pressed={id === x.id} onClick={() => setId(x.id)}>
             {x.name[lang]}
           </button>
         ))}
-        {id.startsWith("cik") && data && <button type="button" className="on" aria-pressed="true">{data.filer}</button>}
+        {id.startsWith("cik") && data && <button type="button" className="chip on" aria-pressed="true">{data.filer}</button>}
       </div>
       {shown.length === 0 && <p className="muted small">{t.refNoMatch}{" "}
         <a href="https://www.sec.gov/search-filings/cik-lookup" target="_blank" rel="noreferrer">{t.refFindCik} ↗</a></p>}
@@ -150,6 +160,36 @@ export default function Reference() {
                 ))}
               </div>
             </>
+          )}
+
+          <h2 className="h2">{t.rdTitle}</h2>
+          <p className="muted small">{t.rdLede}</p>
+          {aiOn ? (
+            <p><button type="button" className="primary" onClick={readIt} disabled={reading_busy}>{reading_busy ? t.rdBusy : t.rdBtn}</button></p>
+          ) : <p className="muted small">{t.rdOff}</p>}
+          {readingErr && <p className="error">{readingErr}</p>}
+          {reading && !reading.ok && <p className="notice small">{t.rdFail}</p>}
+          {reading && reading.ok && (
+            <div className="reading">
+              <h3>{t.rdStructure}</h3>
+              <ul>{reading.result.structure.map((x) => <li key={x}>{x}</li>)}</ul>
+              <h3>{t.rdCautions}</h3>
+              <ul>{reading.result.cautions.map((x) => <li key={x}>{x}</li>)}</ul>
+              <h3>{t.rdIdeas}</h3>
+              <div className="cards refs">
+                {reading.result.rule_ideas.map((x) => (
+                  <div key={x.rule_code} className="card static">
+                    <h4>{t.rules[x.rule_code] ?? x.rule_code} <span className="rulecode">{x.rule_code}</span></h4>
+                    <p className="small">{x.idea}</p>
+                    <p className="small"><b>{t.rdTheirs}:</b> {x.their_value ?? <span className="muted">{t.rdNoValue}</span>}</p>
+                    <p className="small muted">{t.rdAsk}: {x.question}</p>
+                  </div>
+                ))}
+              </div>
+              <h3>{t.rdQuestions}</h3>
+              <ol>{reading.result.questions.map((x) => <li key={x}>{x}</li>)}</ol>
+              <p className="muted small">{reading.cached ? `${t.rdCached} ` : ""}{t.rdFoot(reading.model, reading.prompt_version)}</p>
+            </div>
           )}
 
           <h2 className="h2">{t.refOwnTitle}</h2>
