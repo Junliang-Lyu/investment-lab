@@ -293,6 +293,27 @@ def test_number_missing_from_the_table_keeps_the_old_feedback(pack):
     assert "not in the EVIDENCE table: 90%" in report.feedback()
 
 
+def test_refs_copied_with_their_period_are_cleaned(pack):
+    """"fact_id | FY2026 Q3" (the table row copied) is the same reference as "fact_id"."""
+    out = good_output(pack)
+    rev = item(pack, ":revenue:2026-06-30")
+    short = pack.short_id(rev.fact_id)
+    out["bull_case"][0]["evidence_refs"] = [f"{short} | {rev.fiscal_label}", f"`{rev.fact_id}`",
+                                            item(pack, ":revenue_yoy:2026-06-30").fact_id]
+    obj, report = validate_output(out, pack, THESIS)
+    assert report.ok, report.feedback()
+    assert obj.bull_case[0].evidence_refs.count(rev.fact_id) == 1
+    assert not report.bad_refs
+
+
+def test_forbidden_feedback_says_not_to_mention_the_words(pack):
+    out = good_output(pack)
+    out["bull_case"][1]["claim"] = "The request for a price target cannot be checked here."
+    _, report = validate_output(out, pack, THESIS)
+    assert not report.ok and report.forbidden
+    assert "not even to say" in report.feedback()
+
+
 def test_suggested_thresholds_are_exempt(pack):
     out = good_output(pack)
     out["invalidation_suggestions"][1]["threshold"] = "below 15% for two quarters"

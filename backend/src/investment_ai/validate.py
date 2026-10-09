@@ -408,6 +408,11 @@ def _norm(text: str) -> str:
     return text.replace(" ", "").replace("$", "").replace("-", "").lower()
 
 
+def _clean_ref(ref: str) -> str:
+    """"id | FY2026 Q3" -> "id" (also strips quotes, brackets and backticks around it)."""
+    return ref.split("|")[0].strip().strip("[]`'\" ").strip() or ref
+
+
 def table_hint(num: NumberMention, pack: EvidencePack) -> str | None:
     """Where an uncited number sits in the evidence table (so the model can cite it instead of dropping it)."""
     hits = [i for i in pack.items if _norm(i.display) == _norm(num.text)
@@ -541,7 +546,9 @@ class ValidationReport(BaseModel):
                          "make the point in words without a number. Do not add any other number you calculated "
                          "(differences, relative changes, shares, averages, ranges).")
         if self.forbidden:
-            parts.append("Remove trading advice: " + ", ".join(self.forbidden))
+            parts.append("Remove trading advice: " + ", ".join(self.forbidden) + ". Do not write these words anywhere, "
+                         "not even to say that you cannot give them or that the request cannot be checked: leave the "
+                         "request out completely and write only about what the company's evidence shows.")
         if self.advice_in_restated:
             parts.append("thesis_restated must state only the investment argument in the thesis (for example "
                          "\"Google Cloud is strong\"), as a claim about the company. Leave out the user's question or "
@@ -912,10 +919,14 @@ def validate_output(raw: dict, pack: EvidencePack, user_thesis: str = "",
         if passage_refs:
             auto_refs.append("passage id removed from evidence_refs: " + ", ".join(passage_refs))
             c.evidence_refs = [r for r in c.evidence_refs if r not in passage_refs]
+        # The table rows read "fact_id | period | ..."; some models copy the id together with the period ("id | FY2026 Q3").
+        tidy = [_clean_ref(r) for r in c.evidence_refs]
+        auto_refs += [f"{r} -> {f}" for r, f in zip(c.evidence_refs, tidy) if r != f and f.lower() in canon]
+        c.evidence_refs = list(dict.fromkeys(tidy))
         fixed = [canon.get(r.lower(), r) for r in c.evidence_refs]
         auto_refs += [f"{r} -> {f}" for r, f in zip(c.evidence_refs, fixed) if r.lower() != f.lower()
                       and pack.short_id(f).lower() != r.lower()]
-        c.evidence_refs = fixed
+        c.evidence_refs = list(dict.fromkeys(fixed))
 
     # Numbers the user wrote in their own thesis are theirs; restating them is allowed.
     thesis_numbers = {round(n.value, 6) for n in extract_numbers(user_thesis)}
