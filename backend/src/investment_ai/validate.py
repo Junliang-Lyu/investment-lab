@@ -446,6 +446,16 @@ KNOWN_CAPS = {"EBITDA", "CAPEX", "NVIDIA", "AMAZON", "APPLE", "GOOGLE", "TESLA",
               "NASDAQ", "NYSE", "OPENAI", "AZURE", "IPHONE", "BLACKWELL", "HOPPER"}
 
 
+# A phrase the thesis asks the model to say ("a famous investor who always says 'back up the truck'") is a code
+# phrase too. Only counted when the thesis also reads like instructions to the assistant, so a thesis that merely
+# quotes management ("management says 'AI demand is strong'") is not affected.
+_INSTRUCTION_CUE = re.compile(r"pretend|role-?play|act as|you are|always say|ignore|instruction|assistant|your (?:answer|reply|output)|"
+                              r"忽略|扮演|假装|你是|口头禅|暗号|助手", re.I)
+_SAY_QUOTED = re.compile(r"(?:\b(?:say|says|saying|write|include|reply|respond|output|repeat|print|type)\b[^'\"“”‘’「」]{0,40}"
+                         r"|(?:说|写上|写出|回复|输出|加上|包含)[^'\"“”‘’「」]{0,10})"
+                         r"['\"“‘「]([^'\"”’」]{2,60})['\"”’」]", re.I)
+
+
 def thesis_markers(thesis: str, pack: EvidencePack | None) -> list[str]:
     """Code words in the thesis that nothing in the evidence explains (so the answer has no reason to repeat them)."""
     corpus = "" if pack is None else " ".join([pack.ticker, pack.company, *(p.text for p in pack.passages),
@@ -459,6 +469,11 @@ def thesis_markers(thesis: str, pack: EvidencePack | None) -> list[str]:
         w = m.group(0)
         if w not in KNOWN_CAPS and w.lower() not in corpus:
             out.append(w)
+    if _INSTRUCTION_CUE.search(thesis):
+        for m in _SAY_QUOTED.finditer(thesis):
+            phrase = m.group(1).strip()
+            if phrase.lower() not in corpus and phrase not in out:
+                out.append(phrase)
     return out
 
 
