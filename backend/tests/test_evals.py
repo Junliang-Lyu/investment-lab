@@ -175,3 +175,17 @@ def test_field_completion_counts_as_a_valid_first_attempt(pack, tmp_path):
     row = report["cases"][0]
     assert row["final_ok"] and row["schema_valid_first"] and row["attempts"] == 1 and row["field_completions"] == 1
     assert report["summary"]["field_completions"] == 1 and report["summary"]["retry_rate"] == 0
+
+
+def test_the_default_model_is_the_one_that_passed_the_published_eval():
+    """The Lab page says "passed the bar" for the model in latest.json: what runs in production must be that model."""
+    import re
+    from pathlib import Path
+
+    from investment_ai.providers import DEFAULT_MODELS
+    root = Path(__file__).resolve().parents[2]
+    latest = json.loads((root / "fixtures" / "evals" / "results" / "latest.json").read_text(encoding="utf-8"))
+    assert latest["summary"]["passed"] is True
+    assert DEFAULT_MODELS["anthropic"] == latest["model"]
+    compose = (root / "deploy" / "compose.invest.yaml").read_text(encoding="utf-8")
+    assert re.search(r"INVEST_ANTHROPIC_MODEL:-" + re.escape(latest["model"]) + r"\}", compose)

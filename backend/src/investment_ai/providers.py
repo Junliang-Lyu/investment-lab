@@ -27,7 +27,7 @@ DEFAULT_PRICES = {
     "gemini": (0.75, 3.75),
     "fake": (0.0, 0.0),
 }
-DEFAULT_MODELS = {"anthropic": "claude-haiku-5-5", "gemini": "gemini-3.8-flash", "fake": "fake-model"}
+DEFAULT_MODELS = {"anthropic": "claude-haiku-4-5", "gemini": "gemini-3.8-flash", "fake": "fake-model"}
 
 
 class LLMError(RuntimeError):
