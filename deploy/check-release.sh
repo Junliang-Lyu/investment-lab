@@ -30,6 +30,7 @@ if [ -f "$HERE/site/index.html" ]; then
   echo "$js" | grep -q "What happened last quarter" && pass "bundle has the quarter explainer" || bad "bundle has the quarter explainer" "string not found in ${got:-?}"
   echo "$js" | grep -q "Upcoming earnings" && pass "bundle has the market context page" || bad "bundle has the market context page" "string not found in ${got:-?}"
   echo "$js" | grep -q "Background only, not a signal" && pass "bundle has the market background strip" || bad "bundle has the market background strip" "string not found in ${got:-?}"
+  echo "$js" | grep -q "In their own words" && pass "bundle has the own-words section" || bad "bundle has the own-words section" "string not found in ${got:-?}"
   echo "$js" | grep -q "How large investors allocate" && pass "bundle has the reference portfolios page" || bad "bundle has the reference portfolios page" "string not found in ${got:-?}"
   echo "$js" | grep -q "Estimate from past release dates" && pass "bundle has the next-earnings callout" || bad "bundle has the next-earnings callout" "string not found in ${got:-?}"
 fi
@@ -89,6 +90,7 @@ elif [ "$c" = 503 ]; then pass "macro series unavailable right now (503, FRED or
 c=$(code "$LAB/lab/reference"); [ "$c" = 200 ] && pass "/lab/reference page" || bad "/lab/reference page" "got $c"
 b=$(curl -s --max-time 30 "$LAB/api/lab/reference"); echo "$b" | grep -q '"id":"berkshire"' && pass "reference list" || bad "reference list" "$(echo "$b" | head -c 150)"
 c=$(code "$LAB/api/lab/reference/nobody"); [ "$c" = 404 ] && pass "unknown reference rejected" || bad "unknown reference rejected" "got $c"
+c=$(code "$LAB/api/lab/reference/cik/notacik"); [ "$c" = 422 ] && pass "bad CIK rejected" || bad "bad CIK rejected" "got $c"
 b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/reference/berkshire"); c=${b##*$'\n'}
 if [ "$c" = 200 ]; then echo "$b" | grep -q '"rule_draft"' && pass "Berkshire 13F profile (200)" || bad "Berkshire 13F profile" "200 without rule_draft"
 elif [ "$c" = 503 ]; then pass "13F profile unavailable right now (503, SEC)"; else bad "Berkshire 13F profile" "got $c"; fi

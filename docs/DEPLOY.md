@@ -148,7 +148,9 @@ AI 反方默认关闭。顺序不能反：先在本地跑 eval 并达标，再�
 3. （可选，推荐）GitHub → Settings → Environments → `production` → 勾选 Required reviewers 并选自己：这样每次发布都要你点一次批准。
 4. 确认 GitHub 账号开启了两步验证。能触发发布的人就等于能改线上，所以这就是最后一道门。
 
-**每次发布**：GitHub → Actions → Release → Run workflow（选 main）。工作流会跑测试、构建前端和镜像、做镜像边界检查、打包并创建 `release-<UTC时间>` Release，然后每 15 秒轮询 `https://invest.jun-liang-lyu.com/release.txt`，直到它变成新的发布号（最多约 20 分钟），否则标红并发邮件。`ci.yml` 在每次推送和 PR 时单独跑测试和前端构建。
+**自动发布**：推送到 main 的提交（只改文档的除外）会自动触发 Release 工作流：先跑测试，测试失败就什么都不发布；通过后构建、发布，并等服务器切换成功。想跳过某一次，在提交信息里写 `[skip release]`；想整体暂停，在 GitHub → Settings → Secrets and variables → Actions → Variables 里新建 `AUTO_RELEASE` = `off`（删掉即恢复）。不要给 `production` 环境设置 Required reviewers，否则每次都要点批准，自动就失去意义。手动发布仍然可用，步骤如下。
+
+**手动发布**：GitHub → Actions → Release → Run workflow（选 main）。工作流会跑测试、构建前端和镜像、做镜像边界检查、打包并创建 `release-<UTC时间>` Release，然后每 15 秒轮询 `https://invest.jun-liang-lyu.com/release.txt`，直到它变成新的发布号（最多约 20 分钟），否则标红并发邮件。`ci.yml` 在每次推送和 PR 时单独跑测试和前端构建。
 
 **服务器行为**（`/opt/investment/bin/auto-deploy.sh`）：只接受 `release-YYYYMMDDTHHMMSSZ` 格式的 tag，且发布者在 `ALLOWED_PUBLISHERS`（默认 `github-actions[bot],Junliang-Lyu`）之内；校验 sha256 和压缩包路径；`docker load` 镜像；切换 `current` 软链接和 `.env.production` 里的 `INVEST_API_IMAGE`；`up -d` 并重建 caddy；最多 3 次运行 `check-release.sh`；成功记入 `/opt/investment/state/last_good`，失败记入 `last_failed` 并回滚到上一个版本（同一个失败的版本不会反复重试）。
 

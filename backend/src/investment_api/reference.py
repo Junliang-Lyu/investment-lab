@@ -6,18 +6,88 @@ from __future__ import annotations
 
 from investment_core.thirteenf import Portfolio13F, by_issuer, concentration, diff, equity_only
 
-# A fixed list keeps SEC traffic bounded. The displayed filer name is the one the SEC reports for the CIK.
+# A fixed list keeps SEC traffic bounded; any other 13F filer can be looked up by CIK (rate-limited, see lab.py).
+# `expect` is a fragment of the name the SEC reports for the CIK (checked against the live SEC in the release
+# routine). `sources` are the institution's OWN publications, linked and never rewritten here.
+L = "letters"
 REFERENCE = [
-    {"id": "berkshire", "cik": "1067983", "en": "Berkshire Hathaway", "zh": "伯克希尔·哈撒韦"},
-    {"id": "pershing", "cik": "1336528", "en": "Pershing Square", "zh": "潘兴广场"},
-    {"id": "bridgewater", "cik": "1350694", "en": "Bridgewater Associates", "zh": "桥水基金"},
-    {"id": "duquesne", "cik": "1536411", "en": "Duquesne Family Office", "zh": "杜肯家族办公室"},
-    {"id": "renaissance", "cik": "1037389", "en": "Renaissance Technologies", "zh": "文艺复兴科技"},
+    {"id": "berkshire", "cik": "1067983", "expect": "BERKSHIRE", "en": "Berkshire Hathaway", "zh": "伯克希尔·哈撒韦",
+     "aliases": ["buffett", "warren buffett", "巴菲特", "伯克希尔", "巴郡"],
+     "about": {"en": "Warren Buffett's holding company. The 13F covers only the listed shares it holds, not the businesses it owns outright.",
+               "zh": "巴菲特掌舵的控股公司。13F 只反映它持有的上市公司股票，不包括它全资拥有的那些企业。"},
+     "sources": [{"kind": L, "url": "https://www.berkshirehathaway.com/letters/letters.html",
+                  "title": {"en": "Annual letters to shareholders (all years)", "zh": "历年致股东信（全部年份）"}}]},
+    {"id": "ark", "cik": "1697748", "expect": "ARK INVEST", "en": "ARK Investment Management", "zh": "方舟投资（ARK）",
+     "aliases": ["ark", "cathie wood", "arkk", "方舟", "木头姐", "凯茜·伍德", "凯瑟琳·伍德"],
+     "about": {"en": "Cathie Wood's firm, which runs actively managed funds themed on 'disruptive innovation'. Its 13F is the combined holdings of those funds, and it trades often, so the picture changes quickly.",
+               "zh": "凯茜·伍德（木头姐）的公司，管理以“颠覆式创新”为主题的主动型基金。它的 13F 是这些基金的合并持仓，交易频繁，变化很快。"},
+     "sources": [{"kind": "research", "url": "https://www.ark-invest.com/articles",
+                  "title": {"en": "ARK's research articles and commentary", "zh": "ARK 的研究文章与评论"}}]},
+    {"id": "hh", "cik": "1759760", "expect": "H&H", "en": "H&H International Investment", "zh": "H&H International（段永平）",
+     "aliases": ["duan yongping", "h&h", "hh international", "段永平", "大道无形"],
+     "about": {"en": "The 13F filer widely reported in the media as Duan Yongping's investment vehicle; the filing itself names only the company, not a person. A very concentrated portfolio.",
+               "zh": "媒体普遍报道这是段永平的投资主体；报告本身只写公司名，没有写个人。组合非常集中。"},
+     "note": {"en": "Duan Yongping does not publish letters. His public remarks are scattered across social platforms, and this page does not repeat them: read them at the source and check the date.",
+              "zh": "段永平没有发布正式的投资信件。他的公开发言散见于社交平台，这里不转引，请到原处阅读并留意发言日期。"},
+     "sources": []},
+    {"id": "himalaya", "cik": "1709323", "expect": "HIMALAYA", "en": "Himalaya Capital Management", "zh": "喜马拉雅资本（李录）",
+     "aliases": ["li lu", "himalaya", "李录", "喜马拉雅"],
+     "about": {"en": "The firm of Li Lu, a long-term investor known for a very small number of large positions.",
+               "zh": "李录的投资公司，以长期持有、仓位极少而集中著称。"},
+     "note": {"en": "No regular public letters from this firm are linked here.", "zh": "这家机构没有定期公开的投资信件，这里没有可链接的官方材料。"},
+     "sources": []},
+    {"id": "pershing", "cik": "1336528", "expect": "PERSHING SQUARE", "en": "Pershing Square", "zh": "潘兴广场（阿克曼）",
+     "aliases": ["ackman", "bill ackman", "pershing", "阿克曼", "比尔·阿克曼", "潘兴"],
+     "about": {"en": "Bill Ackman's firm, which holds a small number of large positions and often explains its reasoning publicly.",
+               "zh": "比尔·阿克曼的公司，持有少数几只大仓位，并经常公开阐述自己的理由。"},
+     "sources": [{"kind": L, "url": "https://pershingsquareholdings.com/",
+                  "title": {"en": "Pershing Square Holdings: shareholder letters and reports", "zh": "Pershing Square Holdings：股东信与报告"}}]},
+    {"id": "oaktree", "cik": "1822973", "expect": "OAKTREE", "en": "Oaktree Fund Advisors", "zh": "橡树资本（Oaktree Fund Advisors）",
+     "aliases": ["howard marks", "marks", "oaktree", "霍华德·马克斯", "马克斯", "橡树"],
+     "about": {"en": "The Oaktree entity that files the 13F. Oaktree was co-founded by Howard Marks and is mainly a credit and distressed-debt investor, so a 13F (US listed equity only) is a small part of what it manages.",
+               "zh": "橡树资本旗下提交 13F 的机构。橡树由霍华德·马克斯参与创办，以信贷和困境债务投资为主，所以只含美股的 13F 只是它管理资产的一小部分。"},
+     "sources": [{"kind": "memos", "url": "https://www.oaktreecapital.com/insights/howard-marks-memos",
+                  "title": {"en": "Memos from Howard Marks", "zh": "霍华德·马克斯的备忘录"}}]},
+    {"id": "bridgewater", "cik": "1350694", "expect": "BRIDGEWATER", "en": "Bridgewater Associates", "zh": "桥水基金（达利欧创办）",
+     "aliases": ["ray dalio", "dalio", "bridgewater", "达利欧", "桥水"],
+     "about": {"en": "A macro investor founded by Ray Dalio. Most of what it runs is in futures, bonds and other instruments that a 13F does not show, so this is a small slice.",
+               "zh": "雷·达利欧创办的宏观基金。它管理的大头是期货、债券等 13F 看不到的品种，所以这里只是很小的一部分。"},
+     "sources": [{"kind": "research", "url": "https://www.bridgewater.com/research-and-insights",
+                  "title": {"en": "Bridgewater's research and insights", "zh": "桥水的研究与观点"}}]},
+    {"id": "duquesne", "cik": "1536411", "expect": "DUQUESNE", "en": "Duquesne Family Office", "zh": "杜肯家族办公室（德鲁肯米勒）",
+     "aliases": ["druckenmiller", "stanley druckenmiller", "duquesne", "德鲁肯米勒", "杜肯"],
+     "about": {"en": "Stanley Druckenmiller's family office, a concentrated and fast-changing portfolio.", "zh": "斯坦利·德鲁肯米勒的家族办公室，组合集中、调整频繁。"},
+     "sources": []},
+    {"id": "baupost", "cik": "1061768", "expect": "BAUPOST", "en": "Baupost Group", "zh": "鲍波斯特（克拉曼）",
+     "aliases": ["klarman", "seth klarman", "baupost", "克拉曼", "鲍波斯特"],
+     "about": {"en": "Seth Klarman's value-oriented firm. It holds a lot that a 13F does not show, such as cash and private investments.",
+               "zh": "赛斯·克拉曼的价值投资机构。它持有很多 13F 看不到的东西，比如现金和非上市投资。"},
+     "sources": []},
+    {"id": "renaissance", "cik": "1037389", "expect": "RENAISSANCE", "en": "Renaissance Technologies", "zh": "文艺复兴科技",
+     "aliases": ["simons", "jim simons", "renaissance", "rentec", "西蒙斯", "文艺复兴"],
+     "about": {"en": "A quantitative fund with thousands of small positions: the opposite of a concentrated portfolio, and a useful contrast.",
+               "zh": "量化基金，持有几千个小仓位——和集中型组合正好相反，适合做对照。"},
+     "sources": []},
+    {"id": "soros", "cik": "1029160", "expect": "SOROS", "en": "Soros Fund Management", "zh": "索罗斯基金管理公司",
+     "aliases": ["soros", "george soros", "索罗斯"],
+     "about": {"en": "George Soros's investment firm (now a family office). A 13F shows only its US listed equity.", "zh": "乔治·索罗斯的投资机构（现为家族办公室）。13F 只显示它的美股部分。"},
+     "sources": []},
 ]
 
 
 def reference_by_id(rid: str) -> dict | None:
     return next((r for r in REFERENCE if r["id"] == rid), None)
+
+
+def custom_entry(cik: str, name: str) -> dict:
+    """Any other 13F filer, looked up by CIK: only what the SEC itself says."""
+    return {"id": f"cik{int(cik)}", "cik": cik, "en": name, "zh": name, "aliases": [], "about": None, "sources": [],
+            "custom": True}
+
+
+def directory() -> list[dict]:
+    return [{"id": x["id"], "name": {"en": x["en"], "zh": x["zh"]}, "aliases": x["aliases"],
+             "about": x.get("about"), "has_sources": bool(x.get("sources"))} for x in REFERENCE]
 
 
 def _pct(x: float) -> str:
@@ -69,6 +139,12 @@ def profile(entry: dict, portfolios: list[Portfolio13F], lang: str) -> dict:
         "top": [_row(h, merged, classes) for h in merged.top(15)],
         "previous_period": None, "changes": None,
         "rule_draft": rule_draft(cur_raw.filer, cur_raw.period.isoformat(), conc, lang),
+        "draft_values": {"single_max": round(conc["top1"], 2), "top3_max": round(conc["top3"], 2)},
+        "about": (entry.get("about") or {}).get(lang if lang in ("en", "zh") else "en"),
+        "note": (entry.get("note") or {}).get(lang if lang in ("en", "zh") else "en"),
+        "sources": [{"kind": x["kind"], "url": x["url"], "title": x["title"][lang if lang in ("en", "zh") else "en"]}
+                    for x in entry.get("sources", [])],
+        "custom": bool(entry.get("custom")),
     }
     if len(portfolios) > 1:
         prev, _ = equity_only(portfolios[1])

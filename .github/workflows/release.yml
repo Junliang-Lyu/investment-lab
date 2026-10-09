@@ -1,11 +1,20 @@
 # Build a release and publish it as a GitHub Release. The server pulls it (deploy/server/auto-deploy.sh), so no
 # SSH into the server is needed and port 22 can stay closed to everything but the owner's own addresses.
-# Run it by hand: GitHub -> Actions -> Release -> Run workflow (works from a phone too). It builds from the
-# branch you pick (normally main). Optional: Settings -> Environments -> production -> Required reviewers adds an
-# approval click before it runs.
+# It runs by itself on every push to main that changes more than documentation: it runs the tests, builds, publishes
+# a Release, and waits until the server serves it (the server rolls back when its own checks fail). A push whose tests
+# fail publishes nothing. To skip one push, put [skip release] in the commit message. To pause automatic releases
+# without touching code: GitHub -> Settings -> Secrets and variables -> Actions -> Variables -> AUTO_RELEASE = off
+# (delete it or set anything else to resume). By hand: Actions -> Release -> Run workflow (works from a phone too).
+# Optional: Settings -> Environments -> production -> Required reviewers puts an approval click in front of every run,
+# which defeats the automation: leave it off if you want hands-free releases.
 name: Release
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
 concurrency:
   group: release
   cancel-in-progress: false
@@ -18,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
+    if: github.event_name == 'workflow_dispatch' || (vars.AUTO_RELEASE != 'off' && !contains(github.event.head_commit.message, '[skip release]'))
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

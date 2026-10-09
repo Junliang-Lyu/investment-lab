@@ -23,7 +23,7 @@ from investment_core.segments import member_label, segment_series
 from .earnings import estimate_next_earnings
 from .i18n import translate_findings, translate_gate
 from .macro import MacroService
-from .reference import REFERENCE, profile, reference_by_id
+from .reference import REFERENCE, custom_entry, directory, profile, reference_by_id
 from .ratelimit import RateLimiter
 
 log = logging.getLogger("investment_api.lab")
@@ -43,6 +43,25 @@ class CustomPortfolio(BaseModel):
     positions: list[CustomPosition] = Field(default_factory=list, max_length=40)
 
 
+class GateLimits(BaseModel):
+    """Concentration limits typed in by the visitor (for example copied from a reference portfolio) to try in the gate."""
+    single_max: float | None = Field(default=None, ge=0.05, le=1.0)
+    top3_max: float | None = Field(default=None, ge=0.05, le=1.0)
+
+
+def with_limits(rule_set, limits: "GateLimits | None"):
+    if limits is None or (limits.single_max is None and limits.top3_max is None):
+        return rule_set
+    out = []
+    for rule in rule_set.rules:
+        if rule.code == "SINGLE_MAX_WEIGHT_INVESTED" and limits.single_max is not None:
+            rule = rule.model_copy(update={"params": {**rule.params, "max": limits.single_max}})
+        elif rule.code == "TOP3_MAX_WEIGHT_INVESTED" and limits.top3_max is not None:
+            rule = rule.model_copy(update={"params": {**rule.params, "max": limits.top3_max}})
+        out.append(rule)
+    return rule_set.model_copy(update={"rules": out, "version": f"{rule_set.version}+your-limits"})
+
+
 class GateRequest(BaseModel):
     portfolio_id: str = Field(max_length=40)  # a demo portfolio id, or "custom" with `custom`
     custom: CustomPortfolio | None = None
@@ -51,6 +70,7 @@ class GateRequest(BaseModel):
     side: Literal["buy", "sell"] = "buy"
     amount_usd: float = Field(gt=0, le=10_000_000)
     attestations: dict[str, bool] = Field(default_factory=dict)
+    limits: GateLimits | None = None
 
 
 def custom_snapshot(p: CustomPortfolio):
@@ -137,7 +157,7 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
             memo_note = gate_context(rec, symbol, ctx)
         try:
             result = evaluate_trade(snap, TradeProposal(symbol=symbol, side=req.side, amount_usd=req.amount_usd,
-                                                        attestations=req.attestations), rules, ctx)
+                                                        attestations=req.attestations), with_limits(rules, req.limits), ctx)
         except ValueError as e:
             raise HTTPException(422, str(e))
         body = result.model_dump(mode="json")
@@ -201,11 +221,53 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
         return {"today": today.isoformat(), "items": rows}
 
     ref_cache: dict[str, tuple[float, list]] = {}
+    ref_custom_keys: list[str] = []  # cache keys of filers outside the fixed list, oldest first
     ref_lock = threading.Lock()
+
+    def _ref_portfolios(key: str, cik: str, request: Request | None):
+        """Two latest 13F-HR of a filer, cached. `request` is given for filers outside the fixed list: a cold read
+        of those counts against the visitor's daily quota (each costs SEC traffic and memory)."""
+        with ref_lock:
+            hit = ref_cache.get(key)
+            if hit and time.monotonic() - hit[0] < settings.reference_ttl_seconds:
+                return hit[1]
+            if request is not None:
+                ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+                    request.client.host if request.client else "?")
+                if not _custom_allowed(ip):
+                    raise HTTPException(429, "Too many lookups today. Try one of the listed institutions, or come back tomorrow.")
+            try:
+                from investment_data.thirteenf import load_portfolios
+                pfs = load_portfolios(client_factory(), cik, quarters=2)
+            except Exception as e:
+                log.warning("reference %s: SEC fetch failed: %s", key, e)
+                if "404" in str(e):
+                    raise HTTPException(404, "No filer with that CIK.")
+                raise HTTPException(503, "Could not read the 13F filings right now.")
+            if not pfs:
+                raise HTTPException(404, "No 13F filings found: this filer does not file a 13F.")
+            ref_cache[key] = (time.monotonic(), pfs)
+            if request is not None:
+                if key not in ref_custom_keys:
+                    ref_custom_keys.append(key)
+                while len(ref_custom_keys) > settings.custom_cache_max:
+                    ref_cache.pop(ref_custom_keys.pop(0), None)
+            return pfs
 
     @r.get("/reference")
     def reference_list():
-        return [{"id": x["id"], "name": {"en": x["en"], "zh": x["zh"]}} for x in REFERENCE]
+        return directory()
+
+    @r.get("/reference/cik/{cik}")
+    def reference_by_cik(cik: str, request: Request, lang: Literal["zh", "en"] = Query("en")):
+        """Any other institution that files a 13F, by CIK (look it up on sec.gov). Only what the SEC reports."""
+        if not re.fullmatch(r"\d{1,10}", cik):
+            raise HTTPException(422, "A CIK is up to 10 digits.")
+        known = next((x for x in REFERENCE if int(x["cik"]) == int(cik)), None)
+        if known:
+            return profile(known, _ref_portfolios(known["id"], known["cik"], None), lang)
+        pfs = _ref_portfolios(f"cik{int(cik)}", cik, request)
+        return profile(custom_entry(pfs[0].cik, pfs[0].filer), pfs, lang)
 
     @r.get("/reference/{rid}")
     def reference_profile(rid: str, lang: Literal["zh", "en"] = Query("en")):
@@ -213,21 +275,7 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
         entry = reference_by_id(rid)
         if entry is None:
             raise HTTPException(404, "Unknown reference portfolio.")
-        with ref_lock:
-            hit = ref_cache.get(rid)
-            if hit and time.monotonic() - hit[0] < settings.reference_ttl_seconds:
-                pfs = hit[1]
-            else:
-                try:
-                    from investment_data.thirteenf import load_portfolios
-                    pfs = load_portfolios(client_factory(), entry["cik"], quarters=2)
-                except Exception as e:
-                    log.warning("reference %s: SEC fetch failed: %s", rid, e)
-                    raise HTTPException(503, "Could not read the 13F filings right now.")
-                if not pfs:
-                    raise HTTPException(404, "No 13F filings found.")
-                ref_cache[rid] = (time.monotonic(), pfs)
-        return profile(entry, pfs, lang)
+        return profile(entry, _ref_portfolios(rid, entry["cik"], None), lang)
 
     macro = MacroService(settings.macro_ttl_seconds, fetch=macro_fetch)
 

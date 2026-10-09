@@ -57,7 +57,10 @@ export type CalendarResponse = {
   today: string;
   items: { ticker: string; last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }[];
 };
-export type ReferenceItem = { id: string; name: { en: string; zh: string } };
+export type ReferenceItem = {
+  id: string; name: { en: string; zh: string }; aliases: string[]; about: { en: string; zh: string } | null; has_sources: boolean;
+};
+export type RefSource = { kind: string; url: string; title: string };
 export type RefRow = { issuer: string; title_class: string; value_usd: number; weight: number };
 export type RefChange = { issuer: string; title_class: string; weight_before: number; weight_after: number; shares_change_pct: number | null };
 export type ReferenceProfile = {
@@ -66,7 +69,8 @@ export type ReferenceProfile = {
   concentration: { positions: number; top1: number; top3: number; top5: number; top10: number };
   top: RefRow[]; previous_period: string | null;
   changes: Record<"new" | "exited" | "increased" | "decreased", RefChange[]> | null;
-  rule_draft: string;
+  rule_draft: string; draft_values: { single_max: number; top3_max: number };
+  about: string | null; note: string | null; sources: RefSource[]; custom: boolean;
 };
 export type MemoAnswers = {
   reasons: string[]; target_weight_pct: number | null; responses: Partial<Record<"E1" | "E2" | "E3", string>>;
@@ -117,7 +121,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   demoPortfolios: (lang: string) => call<DemoPortfolio[]>(`/api/lab/demo-portfolios?lang=${lang}`),
   gate: (lang: string, body: { portfolio_id: string; symbol: string; side: "buy" | "sell"; amount_usd: number;
-    attestations: Record<string, boolean>; memo_id?: string; custom?: CustomPortfolio }) =>
+    attestations: Record<string, boolean>; memo_id?: string; custom?: CustomPortfolio;
+    limits?: { single_max?: number; top3_max?: number } }) =>
     call<GateResult>(`/api/lab/gate?lang=${lang}`, { method: "POST", body: JSON.stringify(body) }),
   companies: () => call<{ ticker: string }[]>("/api/lab/companies"),
   snapshot: (ticker: string, lang: string) => call<Snapshot>(`/api/lab/companies/${encodeURIComponent(ticker)}/snapshot?lang=${lang}`),
@@ -125,6 +130,7 @@ export const api = {
     call<{ last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }>(
       `/api/lab/companies/${encodeURIComponent(ticker)}/next-earnings`),
   referenceList: () => call<ReferenceItem[]>("/api/lab/reference"),
+  referenceByCik: (cik: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/cik/${encodeURIComponent(cik)}?lang=${lang}`),
   reference: (id: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/${encodeURIComponent(id)}?lang=${lang}`),
   macro: () => call<MacroResponse>("/api/lab/macro"),
   calendar: () => call<CalendarResponse>("/api/lab/calendar"),

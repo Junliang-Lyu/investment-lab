@@ -31,6 +31,11 @@ export default function Gate() {
   const [side, setSide] = useState<"buy" | "sell">(params.get("side") === "sell" ? "sell" : "buy");
   const [amount, setAmount] = useState(800);
   const [attest, setAttest] = useState<Record<string, boolean>>({});
+  const num = (k: string) => { const v = Number(params.get(k)); return v >= 0.05 && v <= 1 ? v : undefined; };
+  const [limits, setLimits] = useState<{ single_max?: number; top3_max?: number } | null>(() => {
+    const single_max = num("single"), top3_max = num("top3");
+    return single_max || top3_max ? { single_max, top3_max } : null;
+  });
   const [result, setResult] = useState<GateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +55,7 @@ export default function Gate() {
       setResult(await api.gate(lang, {
         portfolio_id: pid, symbol, side, amount_usd: amount, attestations: nextAttest,
         ...(memoId ? { memo_id: memoId } : {}),
+        ...(limits ? { limits } : {}),
         ...(pid === "custom" ? { custom: { cash: holdings.cash, positions: holdings.positions.filter((p) => p.symbol && p.market_value > 0) } } : {}),
       }));
     } catch (e) { setResult(null); setError(String((e as Error).message ?? e)); }
@@ -70,6 +76,13 @@ export default function Gate() {
     <section>
       <h1>{t.gateTitle}</h1>
       <p className="lede">{t.gateLede}</p>
+
+      {limits && (
+        <div className="notice small">
+          {t.gtLimits(limits.single_max, limits.top3_max)}{" "}
+          <button type="button" className="linkish" onClick={() => { setLimits(null); setResult(null); }}>{t.gtLimitsOff}</button>
+        </div>
+      )}
 
       <div className="cards three">
         {portfolios.map((p) => (
