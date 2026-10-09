@@ -40,6 +40,9 @@ class Settings(BaseModel):
     # reserved for the skeptic (explanations stop when less than this is left today).
     explain_per_ip_daily: int = 5
     explain_reserve_usd: float = 0.15
+    # Macro charts (public FRED series); the switch lets a bad deploy turn the download off without a release.
+    macro_enabled: bool = True
+    macro_ttl_seconds: int = 6 * 3600
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -52,6 +55,7 @@ class Settings(BaseModel):
         if os.environ.get("RATE_PER_MINUTE"):
             kw["rate_per_minute"] = int(os.environ["RATE_PER_MINUTE"])
         kw["skeptic_enabled"] = os.environ.get("LAB_SKEPTIC_ENABLED") == "1"
+        kw["macro_enabled"] = os.environ.get("LAB_MACRO_ENABLED", "1") != "0"
         for env, field, cast in [("LAB_DATA_DIR", "lab_data_dir", Path), ("LAB_DAILY_BUDGET_USD", "lab_daily_budget_usd", float),
                                  ("LLM_MONTHLY_BUDGET_USD", "monthly_budget_usd", float),
                                  ("LAB_SKEPTIC_PER_IP_DAILY", "skeptic_per_ip_daily", int),
@@ -63,7 +67,8 @@ class Settings(BaseModel):
                                  ("LAB_CUSTOM_PER_IP_DAILY", "custom_per_ip_daily", int),
                                  ("LAB_CUSTOM_GLOBAL_DAILY", "custom_global_daily", int),
                                  ("LAB_EXPLAIN_PER_IP_DAILY", "explain_per_ip_daily", int),
-                                 ("LAB_EXPLAIN_RESERVE_USD", "explain_reserve_usd", float)]:
+                                 ("LAB_EXPLAIN_RESERVE_USD", "explain_reserve_usd", float),
+                                 ("LAB_MACRO_TTL_SECONDS", "macro_ttl_seconds", int)]:
             if os.environ.get(env):
                 kw[field] = cast(os.environ[env])
         return cls(**kw)

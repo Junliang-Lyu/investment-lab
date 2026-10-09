@@ -212,3 +212,22 @@ form.skeptic .tickerfield { flex-direction: row; align-items: center; gap: 8px; 
 .tickerpick .chips { align-items: center; }
 .tickerpick p { margin: 0; }
 .claimline { font-size: 0.88rem; color: var(--muted); margin: 4px 0; }
+
+/* market context */
+.caltable td, .caltable th { text-align: right; }
+.caltable th:first-child { text-align: left; }
+.caltable tr.past td { color: var(--muted); }
+.spanbar { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 6px 0 12px; }
+.spanbar button { font: inherit; padding: 5px 14px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer; }
+.spanbar button + button { border-left: 1px solid var(--line); }
+.spanbar button.on { background: var(--accent); color: #fff; }
+.mcharts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 16px; }
+.mchart { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px 8px; }
+.mchart figcaption { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.mchart .mval { font-variant-numeric: tabular-nums; font-weight: 600; }
+.mchart svg { width: 100%; height: auto; touch-action: pan-y; display: block; }
+.mchart .line { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+.mchart .grid { stroke: var(--line); stroke-width: 1; }
+.mchart .zero { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+.mchart .axis { fill: var(--muted); font-size: 11px; }
+.mchart .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }

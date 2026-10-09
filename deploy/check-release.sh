@@ -28,6 +28,7 @@ if [ -f "$HERE/site/index.html" ]; then
   js=$(curl -s --max-time 30 "$LAB/${got:-assets/missing.js}")
   echo "$js" | grep -q "Look from these angles" && pass "bundle has focus-angle chips" || bad "bundle has focus-angle chips" "string not found in ${got:-?}"
   echo "$js" | grep -q "What happened last quarter" && pass "bundle has the quarter explainer" || bad "bundle has the quarter explainer" "string not found in ${got:-?}"
+  echo "$js" | grep -q "Upcoming earnings" && pass "bundle has the market context page" || bad "bundle has the market context page" "string not found in ${got:-?}"
 fi
 
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')
@@ -70,6 +71,16 @@ c=$(code "$LAB/lab/memos"); [ "$c" = 200 ] && pass "/lab/memos page" || bad "/la
 c=$(code "$LAB/lab/memo/AAAAAAAAAAAAAAAAAAAAAA"); [ "$c" = 200 ] && pass "/lab/memo/<id> page" || bad "/lab/memo/<id> page" "got $c"
 c=$(code "$LAB/api/lab/memos/AAAAAAAAAAAAAAAAAAAAAA"); { [ "$c" = 404 ] || [ "$c" = 503 ]; } && pass "unknown memo ($c)" || bad "unknown memo" "got $c"
 c=$(code "$LAB/api/lab/evals/latest"); { [ "$c" = 200 ] || [ "$c" = 404 ]; } && pass "eval results endpoint ($c)" || bad "eval results endpoint" "got $c"
+
+# Market context: the page is a SPA route; the data endpoints depend on SEC / FRED, so an outage there (503) must not
+# roll a release back. What is checked is that they exist and answer sensibly.
+c=$(code "$LAB/lab/market"); [ "$c" = 200 ] && pass "/lab/market page" || bad "/lab/market page" "got $c"
+b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/calendar"); c=${b##*$'\n'}
+if [ "$c" = 200 ]; then echo "$b" | grep -q '"items":\[{' && pass "earnings calendar (200)" || bad "earnings calendar" "200 without items"
+elif [ "$c" = 503 ]; then pass "earnings calendar unavailable right now (503, SEC)"; else bad "earnings calendar" "got $c"; fi
+b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/macro"); c=${b##*$'\n'}
+if [ "$c" = 200 ]; then echo "$b" | grep -q '"series":\[{' && pass "macro series from FRED (200)" || bad "macro series" "200 without series"
+elif [ "$c" = 503 ]; then pass "macro series unavailable right now (503, FRED or switched off)"; else bad "macro series" "got $c"; fi
 
 # The main site must be unaffected.
 c=$(code "https://${DOMAIN}/en/"); [ "$c" = 200 ] && pass "main site /en/" || bad "main site /en/" "got $c"

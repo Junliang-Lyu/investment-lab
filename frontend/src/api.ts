@@ -48,6 +48,15 @@ export type EvalReport = {
     schema_valid_rate: number; final_ok_rate: number; passed: boolean; by_category: Record<string, { cases: number; final_ok: number }>;
   };
 };
+export type MacroSeries = {
+  id: string; title: { en: string; zh: string }; unit: "%" | "pp"; freq: "daily" | "monthly";
+  points: [string, number][]; latest: { date: string; value: number }; url: string;
+};
+export type MacroResponse = { source: string; attribution: string; updated: string; series: MacroSeries[]; missing: string[] };
+export type CalendarResponse = {
+  today: string;
+  items: { ticker: string; last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }[];
+};
 export type MemoAnswers = {
   reasons: string[]; target_weight_pct: number | null; responses: Partial<Record<"E1" | "E2" | "E3", string>>;
   invalidation: string[]; review_date: string | null; review_focus: string;
@@ -104,6 +113,8 @@ export const api = {
   nextEarnings: (ticker: string) =>
     call<{ last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }>(
       `/api/lab/companies/${encodeURIComponent(ticker)}/next-earnings`),
+  macro: () => call<MacroResponse>("/api/lab/macro"),
+  calendar: () => call<CalendarResponse>("/api/lab/calendar"),
   theses: (ticker: string, lang: string) =>
     call<{ id: string; angle: string; text: string }[]>(`/api/lab/theses/${encodeURIComponent(ticker)}?lang=${lang}`),
   skepticStatus: () => call<SkepticStatus>("/api/lab/skeptic/status"),

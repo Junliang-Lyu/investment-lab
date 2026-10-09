@@ -5,10 +5,11 @@ import Gate from "./pages/Gate";
 import Skeptic from "./pages/Skeptic";
 import MemoPage from "./pages/Memo";
 import MemoList from "./pages/MemoList";
+import Market from "./pages/Market";
 import { LangProvider, useLang } from "./i18n";
 
-type Route = "/lab" | "/lab/company" | "/lab/gate" | "/lab/skeptic" | "/lab/memo" | "/lab/memos";
-const ROUTES: Route[] = ["/lab", "/lab/company", "/lab/gate", "/lab/skeptic", "/lab/memos"];
+type Route = "/lab" | "/lab/company" | "/lab/gate" | "/lab/skeptic" | "/lab/memo" | "/lab/memos" | "/lab/market";
+const ROUTES: Route[] = ["/lab", "/lab/company", "/lab/gate", "/lab/skeptic", "/lab/memos", "/lab/market"];
 const MEMO = /^\/lab\/memo\/([A-Za-z0-9_-]{20,40})$/;
 
 function current(): { route: Route; memoId?: string } {
@@ -53,6 +54,7 @@ function Shell() {
             {link("/lab/skeptic", t.navSkeptic)}
             {link("/lab/memos", t.navMemos)}
             {link("/lab/gate", t.navGate)}
+            {link("/lab/market", t.navMarket)}
             <button className="lang" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label="Switch language">
               {t.switchTo}
             </button>
@@ -66,6 +68,7 @@ function Shell() {
         {route === "/lab/skeptic" && <Skeptic />}
         {route === "/lab/memo" && memoId && <MemoPage id={memoId} />}
         {route === "/lab/memos" && <MemoList />}
+        {route === "/lab/market" && <Market />}
       </main>
       <footer className="wrap foot">
         {t.footer}{" "}

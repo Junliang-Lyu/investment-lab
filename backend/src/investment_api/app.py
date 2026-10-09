@@ -11,7 +11,8 @@ from .ratelimit import RateLimiter
 from .settings import Settings
 
 
-def create_app(settings: Settings | None = None, client_factory=None, provider_factory=None) -> FastAPI:
+def create_app(settings: Settings | None = None, client_factory=None, provider_factory=None,
+               macro_fetch=None) -> FastAPI:
     settings = settings or Settings.from_env()
     docs = settings.api_docs
     app = FastAPI(title="Investment Lab API", docs_url="/api/docs" if docs else None,
@@ -43,7 +44,7 @@ def create_app(settings: Settings | None = None, client_factory=None, provider_f
     def health():
         return {"status": "ok"}
 
-    app.include_router(build_router(settings, client_factory, provider_factory))
+    app.include_router(build_router(settings, client_factory, provider_factory, macro_fetch))
     return app
 
 

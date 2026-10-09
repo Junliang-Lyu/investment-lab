@@ -22,6 +22,7 @@ from investment_core.segments import member_label, segment_series
 
 from .earnings import estimate_next_earnings
 from .i18n import translate_findings, translate_gate
+from .macro import MacroService
 from .ratelimit import RateLimiter
 
 log = logging.getLogger("investment_api.lab")
@@ -74,7 +75,7 @@ def custom_snapshot(p: CustomPortfolio):
     return snap, ctx
 
 
-def build_router(settings, client_factory, provider_factory=None) -> APIRouter:
+def build_router(settings, client_factory, provider_factory=None, macro_fetch=None) -> APIRouter:
     r = APIRouter(prefix="/api/lab")
     demo_dir: Path = settings.fixtures_dir / "demo_portfolios"
     rules = load_rule_set(settings.fixtures_dir / "rules" / "demo.yaml")
@@ -148,33 +149,66 @@ def build_router(settings, client_factory, provider_factory=None) -> APIRouter:
 
     earn_cache: dict[str, tuple[float, list[date]]] = {}
 
+    def _filing_dates(t: str) -> list[date]:
+        """Filing dates of a company's earnings 8-Ks (Item 2.02), cached like the snapshots."""
+        hit = earn_cache.get(t)
+        if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
+            return hit[1]
+        try:
+            client = client_factory()
+            try:
+                cik = client.cik_for(t)
+            except KeyError:
+                raise HTTPException(404, "Ticker not found among SEC-registered companies.")
+            filed = [date.fromisoformat(f["filed"]) for f in client.filings(cik, ("8-K",))
+                     if "2.02" in (f.get("items") or "")]
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.warning("next-earnings %s: SEC fetch failed: %s", t, e)
+            raise HTTPException(503, "Could not read the filing list right now.")
+        earn_cache[t] = (time.monotonic(), filed)
+        return filed
+
     @r.get("/companies/{ticker}/next-earnings")
     def next_earnings(ticker: str):
         """Estimated next earnings date of an SEC-registered company (see earnings.py)."""
         t = ticker.upper().replace(".", "-")
         if not TICKER.match(t):
             raise HTTPException(422, "invalid ticker")
-        hit = earn_cache.get(t)
-        if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
-            filed = hit[1]
-        else:
-            try:
-                client = client_factory()
-                try:
-                    cik = client.cik_for(t)
-                except KeyError:
-                    raise HTTPException(404, "Ticker not found among SEC-registered companies.")
-                filed = [date.fromisoformat(f["filed"]) for f in client.filings(cik, ("8-K",))
-                         if "2.02" in (f.get("items") or "")]
-            except HTTPException:
-                raise
-            except Exception as e:
-                log.warning("next-earnings %s: SEC fetch failed: %s", t, e)
-                raise HTTPException(503, "Could not read the filing list right now.")
-            earn_cache[t] = (time.monotonic(), filed)
-        body = estimate_next_earnings(filed, datetime.now(timezone.utc).date())
+        body = estimate_next_earnings(_filing_dates(t), datetime.now(timezone.utc).date())
         if body is None:
             raise HTTPException(404, "No earnings releases found.")
+        return body
+
+    @r.get("/calendar")
+    def calendar():
+        """Estimated next earnings dates of the curated companies, soonest first (estimates, not announcements).
+        A company whose filings cannot be read right now is left out rather than failing the list."""
+        today = datetime.now(timezone.utc).date()
+        rows = []
+        for t in settings.curated:
+            try:
+                body = estimate_next_earnings(_filing_dates(t.upper().replace(".", "-")), today)
+            except HTTPException:
+                continue
+            if body:
+                rows.append({"ticker": t, **body})
+        if not rows:
+            raise HTTPException(503, "Could not read the filing lists right now.")
+        rows.sort(key=lambda x: (x["past"], x["estimated"]))
+        return {"today": today.isoformat(), "items": rows}
+
+    macro = MacroService(settings.macro_ttl_seconds, fetch=macro_fetch)
+
+    @r.get("/macro")
+    def macro_series():
+        """A few public FRED series as context. Not part of the gate or any rule."""
+        if not settings.macro_enabled:
+            raise HTTPException(503, "Macro charts are switched off.")
+        body = macro.get()
+        if body is None:
+            raise HTTPException(503, "Could not load the macro data right now.")
         return body
 
     custom_use: dict = {"day": "", "total": 0, "ips": {}}
