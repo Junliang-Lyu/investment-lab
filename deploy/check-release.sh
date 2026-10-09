@@ -29,6 +29,7 @@ if [ -f "$HERE/site/index.html" ]; then
   echo "$js" | grep -q "Look from these angles" && pass "bundle has focus-angle chips" || bad "bundle has focus-angle chips" "string not found in ${got:-?}"
   echo "$js" | grep -q "What happened last quarter" && pass "bundle has the quarter explainer" || bad "bundle has the quarter explainer" "string not found in ${got:-?}"
   echo "$js" | grep -q "Upcoming earnings" && pass "bundle has the market context page" || bad "bundle has the market context page" "string not found in ${got:-?}"
+  echo "$js" | grep -q "Background only, not a signal" && pass "bundle has the market background strip" || bad "bundle has the market background strip" "string not found in ${got:-?}"
 fi
 
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')

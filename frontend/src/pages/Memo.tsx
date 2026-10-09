@@ -4,6 +4,7 @@ import { navigate } from "../App";
 import { Strings, useLang } from "../i18n";
 import { forgetMemo, rememberMemo } from "../memos";
 import { Claim } from "./Skeptic";
+import { MacroStrip } from "./Context";
 
 const ES = ["E1", "E2", "E3"] as const;
 const STEP_OF: Record<string, number> = { skeptic_done: 1, user_responded: 2, reviewed: 3, final: 4 };
@@ -205,6 +206,7 @@ export default function MemoPage({ id }: { id: string }) {
 
         <h3>{t.mmC}</h3>
         <p className="muted small">{t.mmCHelp}</p>
+        <MacroStrip collapsible />
         {form.invalidation.map((c, i) => (
           <input key={i} className="wide" maxLength={300} value={c} placeholder={t.mmCPh(i + 1)}
                  onChange={(e) => edit({ invalidation: form.invalidation.map((x, j) => (j === i ? e.target.value : x)) })} />

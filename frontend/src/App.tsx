@@ -54,7 +54,6 @@ function Shell() {
             {link("/lab/skeptic", t.navSkeptic)}
             {link("/lab/memos", t.navMemos)}
             {link("/lab/gate", t.navGate)}
-            {link("/lab/market", t.navMarket)}
             <button className="lang" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label="Switch language">
               {t.switchTo}
             </button>
