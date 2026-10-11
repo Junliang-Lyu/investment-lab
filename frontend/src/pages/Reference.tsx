@@ -21,7 +21,9 @@ function matches(x: ReferenceItem, q: string): boolean {
 export default function Reference() {
   const { t, lang } = useLang();
   const [list, setList] = useState<ReferenceItem[]>([]);
-  const [id, setId] = useState("berkshire");
+  const [id, setId] = useState(() => {
+    try { const v = new URLSearchParams(window.location.search).get("id") ?? ""; return /^[a-z0-9]{2,20}$/.test(v) ? v : "berkshire"; } catch { return "berkshire"; }
+  });
   const [q, setQ] = useState("");
   const [cikIn, setCikIn] = useState("");
   const [data, setData] = useState<ReferenceProfile | null>(null);

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from investment_ai.evidence import label
 from investment_core import evaluate, evaluate_trade
+from investment_core.holders import company_key, holder_row
 from investment_core.insiders import summarize as insider_summary
 from investment_core.financials import DISPLAY_METRICS, build_financials, source_url
 from investment_core.importers import load_portfolio, load_rule_set
@@ -245,6 +246,50 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
                 insider_cache.pop(next(iter(insider_cache)))
             insider_cache[t] = (time.monotonic(), body)
             return body
+
+    holders_cache: dict[str, tuple[float, dict]] = {}
+
+    @r.get("/companies/{ticker}/holders")
+    def holders(ticker: str, lang: Literal["zh", "en"] = Query("en")):
+        """Which of the listed institutions held the company in their latest 13F, and the change from the quarter
+        before. What they held, not why; context only."""
+        t = ticker.upper().replace(".", "-")
+        if not TICKER.match(t):
+            raise HTTPException(422, "invalid ticker")
+        key = f"{t}:{lang}"
+        hit = holders_cache.get(key)
+        if hit and time.monotonic() - hit[0] < settings.reference_ttl_seconds:
+            return hit[1]
+        try:
+            row = client_factory().ticker_map().get(t)
+        except Exception as e:
+            log.warning("holders %s: ticker list unavailable: %s", t, e)
+            raise HTTPException(503, "Could not read the SEC company list right now.")
+        if row is None:
+            raise HTTPException(404, "Ticker not found among SEC-registered companies.")
+        ckey = company_key(str(row.get("title", "")))
+        held, absent, unavailable = [], [], []
+        for entry in REFERENCE:
+            name = entry[lang]
+            try:
+                pfs = _ref_portfolios(entry["id"], entry["cik"], None)
+            except HTTPException:
+                unavailable.append({"id": entry["id"], "name": name})
+                continue
+            hr = holder_row(pfs, ckey)
+            if hr is None:
+                absent.append({"id": entry["id"], "name": name})
+            else:
+                held.append({"id": entry["id"], "name": name, "cik": entry["cik"], **hr})
+        if not held and not absent:
+            raise HTTPException(503, "Could not read the 13F filings right now.")
+        held.sort(key=lambda x: (not x["held"], -(x["weight"] or 0)))
+        body = {"ticker": t, "company": row.get("title", ""), "match": ckey, "institutions": held, "not_held": absent,
+                "unavailable": unavailable, "covered": len(REFERENCE)}
+        if len(holders_cache) >= 200:
+            holders_cache.pop(next(iter(holders_cache)))
+        holders_cache[key] = (time.monotonic(), body)
+        return body
 
     @r.get("/calendar")
     def calendar():

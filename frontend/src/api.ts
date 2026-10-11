@@ -84,6 +84,16 @@ export type Insiders = {
   filings: number; read: number; failed: number; as_owner: number; truncated: boolean;
 };
 
+export type Holder = {
+  id: string; name: string; cik: string; period: string; filed: string; previous_period: string | null; held: boolean;
+  weight: number | null; rank: number | null; positions: number; value_usd: number | null; shares: number | null;
+  prev_shares: number | null; change: "new" | "exited" | "increased" | "decreased" | "unchanged" | null; change_pct: number | null;
+};
+export type Holders = {
+  ticker: string; company: string; institutions: Holder[]; not_held: { id: string; name: string }[];
+  unavailable: { id: string; name: string }[]; covered: number;
+};
+
 export type RefReading =
   | { ok: true; cached: boolean; evaluated: false; period: string; model: string | null; prompt_version: string;
       result: { structure: string[]; cautions: string[]; questions: string[];
@@ -146,6 +156,7 @@ export const api = {
   nextEarnings: (ticker: string) =>
     call<{ last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }>(
       `/api/lab/companies/${encodeURIComponent(ticker)}/next-earnings`),
+  holders: (ticker: string, lang: string) => call<Holders>(`/api/lab/companies/${encodeURIComponent(ticker)}/holders?lang=${lang}`),
   insiders: (ticker: string) => call<Insiders>(`/api/lab/companies/${encodeURIComponent(ticker)}/insiders`),
   referenceList: () => call<ReferenceItem[]>("/api/lab/reference"),
   referenceByCik: (cik: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/cik/${encodeURIComponent(cik)}?lang=${lang}`),

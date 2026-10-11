@@ -6,6 +6,7 @@ import { useLang } from "../i18n";
 import Explainer from "./Explainer";
 import { MacroStrip, NextEarnings } from "./Context";
 import InsiderTrades from "./Insiders";
+import HoldersView from "./Holders";
 
 const ROWS = ["revenue", "gross_margin", "operating_income", "operating_margin", "net_income", "cfo", "capex", "fcf",
   "cash_and_investments", "net_cash"];
@@ -127,6 +128,7 @@ export default function Company() {
               </div>
             </>
           )}
+          <HoldersView ticker={data.ticker} />
           <InsiderTrades ticker={data.ticker} />
           <p className="muted small">{data.note}</p>
         </>
