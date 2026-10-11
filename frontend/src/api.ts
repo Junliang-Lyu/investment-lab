@@ -74,13 +74,14 @@ export type ReferenceProfile = {
   about: string | null; note: string | null; sources: RefSource[]; custom: boolean;
 };
 export type InsiderTrade = {
-  date: string; side: "buy" | "sell"; owner: string; roles: string[]; shares: number; price: number | null;
+  date: string; side: "buy" | "sell"; owner: string; co_owners: number; security: string; roles: string[]; shares: number; price: number | null;
   value: number | null; after: number | null; direct: boolean; plan_10b5_1: boolean; filed: string | null; url: string;
 };
 export type InsiderSide = { trades: number; people: number; shares: number; value: number; planned: number };
 export type Insiders = {
   ticker: string; window_start: string; window_end: string; buys: InsiderSide; sells: InsiderSide;
-  other_transactions: number; trades: InsiderTrade[]; filings: number; read: number; failed: number; truncated: boolean;
+  other_transactions: number; trades: InsiderTrade[]; months: { month: string; buy: number; sell: number }[];
+  filings: number; read: number; failed: number; as_owner: number; truncated: boolean;
 };
 
 export type RefReading =

@@ -296,6 +296,14 @@ input.narrow { width: 5em; }
 .insiders .sums { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }
 .insiders .sum { flex: 1 1 220px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .insiders .sum b { display: block; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
-.insiders .sum.buy b { color: var(--accent); }
-.insiders .num { text-align: right; }
-.insiders .tag { display: inline-block; padding: 0 6px; margin-left: 6px; font-size: 0.72rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+.insiders .tag { display: inline-block; padding: 0 6px; margin-left: 6px; font-size: 0.72rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); white-space: nowrap; }
+.insiders .months { width: 100%; height: auto; display: block; margin: 6px 0 2px; }
+.insiders .legend { display: flex; gap: 14px; font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; }
+.insiders .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+table.instbl th, table.instbl td { text-align: left; white-space: normal; vertical-align: top; position: static; background: none; }
+table.instbl .r { text-align: right; white-space: nowrap; }
+table.instbl tr.grp { cursor: pointer; }
+table.instbl tr.grp:hover td, table.instbl tr.grp:hover th { background: var(--surface); }
+table.instbl tr.det td { background: var(--surface); font-size: 0.88rem; }
+table.instbl .sub { display: block; font-size: 0.78rem; color: var(--muted); }
+table.instbl .caret { display: inline-block; width: 1em; color: var(--muted); }

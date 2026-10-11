@@ -53,6 +53,7 @@ class Form4:
     owners: list[Owner]
     plan_10b5_1: bool
     txns: list[Txn]
+    issuer_cik: int | None = None  # whose shares were traded; a company's filing list also holds forms it filed as owner
     accession: str = ""
     filed: date | None = None
     url: str = ""
@@ -118,7 +119,33 @@ def parse_form4(xml: bytes) -> Form4 | None:
                         after=_num(_text(t, "postTransactionAmounts/sharesOwnedFollowingTransaction/value")),
                         security=_text(t, "securityTitle/value"),
                         direct=_text(t, "ownershipNature/directOrIndirectOwnership/value").upper() != "I"))
-    return Form4(owners=owners, plan_10b5_1=plan, txns=txns)
+    try:
+        issuer = int(_text(root, "issuer/issuerCik"))
+    except ValueError:
+        issuer = None
+    return Form4(owners=owners, plan_10b5_1=plan, txns=txns, issuer_cik=issuer)
+
+
+_ENTITY = {"LP", "LLC", "INC", "CORP", "LTD", "TRUST", "FUND", "CAPITAL", "PARTNERS", "HOLDINGS", "GROUP", "COMPANY",
+           "FOUNDATION", "ASSOCIATES", "&", "CO", "PLC", "ETAL"}
+_SUFFIX = {"JR", "SR", "II", "III", "IV"}
+
+
+def display_name(raw: str) -> str:
+    """SEC writes people as 'LAST FIRST MIDDLE' (often in capitals). Shown as 'First Middle Last'; entities (and
+    anything with a comma) are kept as written. A guess: the raw form stays in the filing the row links to."""
+    name = " ".join(raw.split())
+    words = [w.strip(".,").upper().replace(".", "") for w in name.replace(",", " ").split()]
+    if not name or "," in name or any(w in _ENTITY for w in words) or any(c.isdigit() for c in name):
+        return name
+    parts = name.split()
+    if len(parts) < 2:
+        return name
+    tail = []
+    while len(parts) > 2 and parts[-1].strip(".").upper() in _SUFFIX:
+        tail.insert(0, parts.pop())
+    out = " ".join(parts[1:] + [parts[0]] + tail)
+    return out.title() if out.isupper() or out.islower() else out
 
 
 def summarize(forms: list[Form4], today: date, months: int = 12) -> dict:
@@ -140,7 +167,8 @@ def summarize(forms: list[Form4], today: date, months: int = 12) -> dict:
             seen.add(key)
             rows.append({
                 "date": t.date.isoformat(), "side": "buy" if t.code == "P" else "sell",
-                "owner": " / ".join(names) or "?", "roles": owner.roles(),
+                "owner": display_name(names[0]) if names else "?", "co_owners": max(0, len(names) - 1),
+                "security": t.security, "roles": owner.roles(),
                 "shares": t.shares, "price": t.price,
                 "value": round(t.shares * t.price, 2) if t.price else None,
                 "after": t.after, "direct": t.direct, "plan_10b5_1": f.plan_10b5_1,
@@ -154,5 +182,17 @@ def summarize(forms: list[Form4], today: date, months: int = 12) -> dict:
                 "shares": sum(r["shares"] for r in rs), "value": round(sum(r["value"] or 0 for r in rs), 2),
                 "planned": sum(1 for r in rs if r["plan_10b5_1"])}
 
-    return {"window_start": start.isoformat(), "window_end": today.isoformat(), "buys": tot("buy"),
+    by_month: dict[str, dict] = {}
+    y, m = today.year, today.month
+    for _ in range(months + 1):
+        by_month[f"{y:04d}-{m:02d}"] = {"month": f"{y:04d}-{m:02d}", "buy": 0.0, "sell": 0.0}
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    for r in rows:
+        if r["value"] and r["date"][:7] in by_month:
+            by_month[r["date"][:7]][r["side"]] += r["value"]
+    series = sorted(by_month.values(), key=lambda x: x["month"])
+    for x in series:
+        x["buy"], x["sell"] = round(x["buy"], 2), round(x["sell"], 2)
+
+    return {"window_start": start.isoformat(), "months": series, "window_end": today.isoformat(), "buys": tot("buy"),
             "sells": tot("sell"), "other_transactions": other, "trades": rows}

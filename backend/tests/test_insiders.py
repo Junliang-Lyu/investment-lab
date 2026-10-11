@@ -7,11 +7,12 @@ from test_api import FakeEdgar
 
 from investment_api.app import create_app
 from investment_api.settings import Settings
-from investment_core.insiders import parse_form4, summarize
+from investment_core.insiders import display_name, parse_form4, summarize
 from investment_data.insiders import load_form4s
 
 
-def form4(name="Doe Jane", title="Chief Financial Officer", director=0, officer=1, ten=0, plan=0, txns=(), foot=""):
+def form4(name="Doe Jane", title="Chief Financial Officer", director=0, officer=1, ten=0, plan=0, txns=(), foot="",
+          issuer="0001652044"):
     rows = ""
     for day, code, shares, price, ad, after, owner in txns:
         pr = f"<transactionPricePerShare><value>{price}</value></transactionPricePerShare>" if price is not None else ""
@@ -24,7 +25,7 @@ def form4(name="Doe Jane", title="Chief Financial Officer", director=0, officer=
 <ownershipNature><directOrIndirectOwnership><value>{owner}</value></directOrIndirectOwnership></ownershipNature>
 </nonDerivativeTransaction>"""
     return f"""<?xml version="1.0"?><ownershipDocument><schemaVersion>X0508</schemaVersion><documentType>4</documentType>
-<issuer><issuerCik>0001652044</issuerCik><issuerName>Alphabet Inc.</issuerName><issuerTradingSymbol>GOOG</issuerTradingSymbol></issuer>
+<issuer><issuerCik>{issuer}</issuerCik><issuerName>Alphabet Inc.</issuerName><issuerTradingSymbol>GOOG</issuerTradingSymbol></issuer>
 {"<aff10b5One>1</aff10b5One>" if plan else ""}
 <reportingOwner><reportingOwnerId><rptOwnerCik>1</rptOwnerCik><rptOwnerName>{name}</rptOwnerName></reportingOwnerId>
 <reportingOwnerRelationship><isDirector>{director}</isDirector><isOfficer>{officer}</isOfficer><isTenPercentOwner>{ten}</isTenPercentOwner>
@@ -42,6 +43,7 @@ OLD = ("2025-03-01", "S", 100, 100, "D", 1, "D")
 
 def test_parse_reads_owner_roles_plan_and_rows():
     f = parse_form4(form4(director=1, plan=1, txns=[SALE, GRANT]))
+    assert f.issuer_cik == 1652044
     assert f.owners[0].name == "Doe Jane" and f.owners[0].roles() == ["Chief Financial Officer", "Director"]
     assert f.plan_10b5_1 and len(f.txns) == 2
     assert f.txns[0].code == "S" and f.txns[0].shares == 1000 and f.txns[0].price == 150.5 and not f.txns[0].acquired
@@ -64,7 +66,22 @@ def test_summary_counts_only_open_market_trades_in_the_window():
     assert s["buys"] == {"trades": 1, "people": 1, "shares": 500.0, "value": 70000.0, "planned": 0}
     assert s["sells"]["shares"] == 1000 and s["sells"]["value"] == 150500.0
     assert s["other_transactions"] == 2  # the grant and the exercise are counted, not listed (the old one is out of window)
+    assert s["trades"][0]["owner"] == "Jane Doe" and s["trades"][1]["owner"] == "Rick Roe"
     assert s["trades"][1]["roles"] == ["Director"] and s["trades"][0]["roles"] == ["Chief Financial Officer"]
+
+
+def test_display_name_turns_last_first_into_first_last_and_leaves_entities_alone():
+    assert display_name("ARNOLD FRANCES") == "Frances Arnold" and display_name("Saraci Marsida") == "Marsida Saraci"
+    assert display_name("Smith John Jr.") == "John Smith Jr." and display_name("Page Lawrence E") == "Lawrence E Page"
+    assert display_name("GV 2021 GP, L.P.") == "GV 2021 GP, L.P." and display_name("Vanguard Group Inc") == "Vanguard Group Inc"
+    assert display_name("") == ""
+
+
+def test_summary_has_a_month_series_covering_the_window():
+    s = summarize([parse_form4(form4(txns=[SALE, BUY]))], TODAY)
+    ms = {m["month"]: m for m in s["months"]}
+    assert len(s["months"]) == 13 and s["months"][-1]["month"] == "2026-10" and s["months"][0]["month"] == "2025-10"
+    assert ms["2026-09"]["sell"] == 150500.0 and ms["2026-08"]["buy"] == 70000.0 and ms["2026-07"] == {"month": "2026-07", "buy": 0.0, "sell": 0.0}
 
 
 def test_a_purchase_code_with_a_disposal_flag_is_not_a_trade_and_duplicates_collapse():
@@ -109,9 +126,16 @@ def _app(factory):
 
 def test_loader_reads_the_plain_xml_and_skips_old_filings():
     forms, meta = load_form4s(FakeForms(), "0001652044", date(2026, 10, 1))
-    assert len(forms) == 2 and meta == {"filings": 2, "read": 2, "failed": 0, "truncated": False}
+    assert len(forms) == 2 and meta == {"filings": 2, "read": 2, "failed": 0, "as_owner": 0, "truncated": False}
     assert ("0001-26-1", "wf-form4.xml") in FakeForms.reads  # the rendering prefix is dropped
     assert forms[0].url.endswith("0001-26-1/wf-form4.xml") and forms[0].filed == date(2026, 9, 12)
+
+
+def test_forms_the_company_filed_as_an_owner_of_other_shares_are_not_its_insider_trades():
+    class AsOwner(FakeForms):
+        docs = {**FakeForms.docs, "0001-26-2": form4(name="GV 2021", txns=[BUY], issuer="0001234567")}
+    forms, meta = load_form4s(AsOwner(), "0001652044", date(2026, 10, 1))
+    assert len(forms) == 1 and meta["as_owner"] == 1 and meta["failed"] == 0
 
 
 def test_loader_cap_and_failures():

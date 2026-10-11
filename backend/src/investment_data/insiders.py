@@ -11,7 +11,7 @@ from .edgar import EdgarClient
 
 log = logging.getLogger("investment_data.insiders")
 
-MAX_FILINGS = 40  # the newest Form 4s inside the window; a very busy filer is cut here and the page says so
+MAX_FILINGS = 100  # the newest Form 4s inside the window; a very busy filer is cut here and the page says so
 
 
 def load_form4s(client: EdgarClient, cik: str, today: date, months: int = 12,
@@ -21,7 +21,7 @@ def load_form4s(client: EdgarClient, cik: str, today: date, months: int = 12,
     start = today - timedelta(days=round(months * 30.4))
     listed = [f for f in client.filings(cik, ("4",)) if date.fromisoformat(f["filed"]) >= start]
     take = listed[:cap]
-    out, failed = [], 0
+    out, failed, foreign = [], 0, 0
     for f in take:
         try:
             name = (f.get("primary_document") or "").rsplit("/", 1)[-1]  # the plain XML, not the rendered page
@@ -37,9 +37,13 @@ def load_form4s(client: EdgarClient, cik: str, today: date, months: int = 12,
             failed += 1
             log.warning("form4 %s: %s", f.get("accession"), e)
             continue
+        if form.issuer_cik is not None and form.issuer_cik != int(cik):
+            foreign += 1  # the company filed this as an owner of another company's shares
+            continue
         form.accession, form.filed = f["accession"], date.fromisoformat(f["filed"])
         form.url = client.document_url(cik, f["accession"], name)
         out.append(form)
-    if take and not out:
+    if take and not out and not foreign:
         raise RuntimeError("could not read any Form 4")
-    return out, {"filings": len(listed), "read": len(out), "failed": failed, "truncated": len(listed) > len(take)}
+    return out, {"filings": len(listed), "read": len(out) + foreign, "failed": failed, "as_owner": foreign,
+                 "truncated": len(listed) > len(take)}
