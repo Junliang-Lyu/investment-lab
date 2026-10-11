@@ -73,6 +73,16 @@ export type ReferenceProfile = {
   sample: { positions: { symbol: string; issuer: string; real: boolean; weight: number }[]; share_of_reported: number };
   about: string | null; note: string | null; sources: RefSource[]; custom: boolean;
 };
+export type InsiderTrade = {
+  date: string; side: "buy" | "sell"; owner: string; roles: string[]; shares: number; price: number | null;
+  value: number | null; after: number | null; direct: boolean; plan_10b5_1: boolean; filed: string | null; url: string;
+};
+export type InsiderSide = { trades: number; people: number; shares: number; value: number; planned: number };
+export type Insiders = {
+  ticker: string; window_start: string; window_end: string; buys: InsiderSide; sells: InsiderSide;
+  other_transactions: number; trades: InsiderTrade[]; filings: number; read: number; failed: number; truncated: boolean;
+};
+
 export type RefReading =
   | { ok: true; cached: boolean; evaluated: false; period: string; model: string | null; prompt_version: string;
       result: { structure: string[]; cautions: string[]; questions: string[];
@@ -135,6 +145,7 @@ export const api = {
   nextEarnings: (ticker: string) =>
     call<{ last_reported: string; estimated: string; method: "year_ago" | "cadence"; past: boolean }>(
       `/api/lab/companies/${encodeURIComponent(ticker)}/next-earnings`),
+  insiders: (ticker: string) => call<Insiders>(`/api/lab/companies/${encodeURIComponent(ticker)}/insiders`),
   referenceList: () => call<ReferenceItem[]>("/api/lab/reference"),
   referenceByCik: (cik: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/cik/${encodeURIComponent(cik)}?lang=${lang}`),
   reference: (id: string, lang: string) => call<ReferenceProfile>(`/api/lab/reference/${encodeURIComponent(id)}?lang=${lang}`),

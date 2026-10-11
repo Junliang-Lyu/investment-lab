@@ -33,6 +33,7 @@ if [ -f "$HERE/site/index.html" ]; then
   echo "$js" | grep -q "In their own words" && pass "bundle has the own-words section" || bad "bundle has the own-words section" "string not found in ${got:-?}"
   echo "$js" | grep -q "How large investors allocate" && pass "bundle has the reference portfolios page" || bad "bundle has the reference portfolios page" "string not found in ${got:-?}"
   echo "$js" | grep -q "Estimate from past release dates" && pass "bundle has the next-earnings callout" || bad "bundle has the next-earnings callout" "string not found in ${got:-?}"
+  echo "$js" | grep -q "Insider trades (Form 4" && pass "bundle has the insider trades section" || bad "bundle has the insider trades section" "string not found in ${got:-?}"
 fi
 
 h=$(curl -s -D - -o /dev/null --max-time 30 "$LAB/lab" | tr -d '\r')
@@ -85,6 +86,11 @@ elif [ "$c" = 503 ]; then pass "earnings calendar unavailable right now (503, SE
 b=$(curl -s --max-time 90 -w '\n%{http_code}' "$LAB/api/lab/macro"); c=${b##*$'\n'}
 if [ "$c" = 200 ]; then echo "$b" | grep -q '"series":\[{' && pass "macro series from FRED (200)" || bad "macro series" "200 without series"
 elif [ "$c" = 503 ]; then pass "macro series unavailable right now (503, FRED or switched off)"; else bad "macro series" "got $c"; fi
+
+# Insider trades (Form 4): depends on SEC, so an outage (503) must not roll a release back.
+b=$(curl -s --max-time 120 -w '\n%{http_code}' "$LAB/api/lab/companies/GOOG/insiders"); c=${b##*$'\n'}
+if [ "$c" = 200 ]; then echo "$b" | grep -q '"trades":\[' && echo "$b" | grep -q '"buys":{' && pass "insider trades (200)" || bad "insider trades" "200 without trades/buys"
+elif [ "$c" = 503 ]; then pass "insider trades unavailable right now (503, SEC)"; else bad "insider trades" "got $c"; fi
 
 # 13F reference portfolios: the page is a SPA route; the profile comes from SEC (503 on an outage must not roll back).
 c=$(code "$LAB/lab/reference"); [ "$c" = 200 ] && pass "/lab/reference page" || bad "/lab/reference page" "got $c"

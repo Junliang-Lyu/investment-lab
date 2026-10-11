@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from investment_ai.evidence import label
 from investment_core import evaluate, evaluate_trade
+from investment_core.insiders import summarize as insider_summary
 from investment_core.financials import DISPLAY_METRICS, build_financials, source_url
 from investment_core.importers import load_portfolio, load_rule_set
 from investment_core.models import Asset, AssetType, Sleeve, TradeProposal
@@ -202,6 +203,48 @@ def build_router(settings, client_factory, provider_factory=None, macro_fetch=No
         if body is None:
             raise HTTPException(404, "No earnings releases found.")
         return body
+
+    insider_cache: dict[str, tuple[float, dict]] = {}
+    insider_lock = threading.Lock()
+
+    @r.get("/companies/{ticker}/insiders")
+    def insiders(ticker: str, request: Request):
+        """Open-market insider buys and sells in the last 12 months, from Form 4 filings (context only)."""
+        from investment_data.insiders import load_form4s
+        t = ticker.upper().replace(".", "-")
+        if not TICKER.match(t):
+            raise HTTPException(422, "invalid ticker")
+        hit = insider_cache.get(t)
+        if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
+            return hit[1]
+        if t not in settings.curated and not any(f"{t}:{lg}" in cache for lg in ("zh", "en")):
+            # the company page asks for the snapshot first, which was already counted; a cold lookup alone is counted here
+            ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+                request.client.host if request.client else "?")
+            if not _custom_allowed(ip):
+                raise HTTPException(429, "Too many companies looked up today. Try one of the listed companies, or come back tomorrow.")
+        with insider_lock:  # one cold read at a time: up to ~40 small SEC requests each
+            hit = insider_cache.get(t)
+            if hit and time.monotonic() - hit[0] < settings.snapshot_ttl_seconds:
+                return hit[1]
+            try:
+                client = client_factory()
+                try:
+                    cik = client.cik_for(t)
+                except KeyError:
+                    raise HTTPException(404, "Ticker not found among SEC-registered companies.")
+                today = datetime.now(timezone.utc).date()
+                forms, meta = load_form4s(client, cik, today)
+            except HTTPException:
+                raise
+            except Exception as e:
+                log.warning("insiders %s: SEC fetch failed: %s", t, e)
+                raise HTTPException(503, "Could not read the insider filings right now.")
+            body = {"ticker": t, **insider_summary(forms, today), **meta}
+            if len(insider_cache) >= 200:
+                insider_cache.pop(next(iter(insider_cache)))
+            insider_cache[t] = (time.monotonic(), body)
+            return body
 
     @r.get("/calendar")
     def calendar():
