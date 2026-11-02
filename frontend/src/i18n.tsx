@@ -182,7 +182,7 @@ const STRINGS = {
     inPriceNone: "–",
     hdTitle: "Well-known institutions' holdings (13F)",
     hdNote:
-      "What ten well-known institutions held in this company at their latest quarter-end, from their 13F filings. It shows what they held, not why, and not what they have done since: a 13F is filed up to 45 days after quarter end, covers US long positions only, and the list is a fixed ten, so not being on it says nothing. Context only, not a signal.",
+      "What well-known institutions (a fixed list) held in this company at their latest quarter-end, from their 13F filings. It shows what they held, not why, and not what they have done since: a 13F is filed up to 45 days after quarter end, covers US long positions only, and the list is fixed, so not being on it says nothing. Context only, not a signal.",
     hdInst: "Institution", hdValue: "Position value", hdWeight: "Share of their US stocks", hdRank: "Rank", hdChange: "Vs. the quarter before", hdPeriod: "As of",
     hdNew: "New position", hdExited: "Sold out", hdUnchanged: "Same share count",
     hdUp: (p: number | null) => (p == null ? "Added" : `Added ${(p * 100).toFixed(0)}% more shares`),
@@ -554,7 +554,7 @@ const STRINGS = {
     inPriceNone: "–",
     hdTitle: "知名机构的持仓（13F）",
     hdNote:
-      "十家知名机构在最近一个季度末对这家公司的持仓，来自他们的 13F 申报。这只说明他们当时持有什么，不说明原因，也不说明之后做了什么：13F 在季度结束后最多 45 天才提交，只含美股多头，名单是固定的十家，所以不在名单里说明不了什么。仅供参考，不是信号。",
+      "一份固定名单里的知名机构在最近一个季度末对这家公司的持仓，来自他们的 13F 申报。这只说明他们当时持有什么，不说明原因，也不说明之后做了什么：13F 在季度结束后最多 45 天才提交，只含美股多头，名单是固定的，所以不在名单里说明不了什么。仅供参考，不是信号。",
     hdInst: "机构", hdValue: "持仓市值", hdWeight: "占其美股持仓", hdRank: "排名", hdChange: "较上一季度", hdPeriod: "截至",
     hdNew: "新建仓", hdExited: "已清仓", hdUnchanged: "股数不变",
     hdUp: (p: number | null) => (p == null ? "增持" : `增持 ${(p * 100).toFixed(0)}%`),
